@@ -21,6 +21,7 @@ Install a plugin:
 | Plugin | Description |
 | --- | --- |
 | [`history`](plugins/history/README.md) | Auto-commits each Claude turn (prompt + workspace state) to a per-project shadow git repo, with skills to inspect and restore from the history. |
+| [`devcontainers`](plugins/devcontainers/README.md) | Author, explain, lint, run, and sandbox via devcontainers (containers.dev). Optional opt-in hooks route Claude's Bash calls into the dev container and auto-rebuild on config edits. |
 
 ## Repo layout
 
