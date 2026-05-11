@@ -1,0 +1,8 @@
+{
+  "name": "history",
+  "description": "Auto-commits each Claude turn (prompt + workspace state) to a per-project shadow git repo at ~/.claude-history/<basename>-<hash>.git, with skills to inspect and restore from the history.",
+  "version": "0.2.0",
+  "author": {
+    "name": "zeckon"
+  }
+}

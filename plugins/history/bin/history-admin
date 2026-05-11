@@ -1,0 +1,170 @@
+#!/usr/bin/env bash
+# history-admin — cross-repo management for shadow-history bare repos.
+#
+# Operates on every repo under ~/.claude-history/. For working with a single
+# repo's git history, use `bin/history` instead.
+set -uo pipefail
+
+HISTORY_DIR="$HOME/.claude-history"
+
+usage() {
+  cat <<'EOF'
+history-admin <command> [args]
+
+  list                       List all shadow repos with size, commits, workspace path.
+  gc                         Run `git gc --auto` on every shadow repo (compact, safe).
+  prune-orphan [--dry-run]   Delete shadow repos whose source workspace no longer exists.
+  prune-old <days> [--dry-run]
+                             Delete shadow repos with no activity in the last N days.
+  remove <dirname>           Delete one shadow repo by directory name (e.g. myproject-a3f9b2.git).
+EOF
+}
+
+# Iterate shadow repos, calling $1 with the repo path. Skips if HISTORY_DIR
+# missing or empty.
+each_repo() {
+  local fn="$1"
+  [ -d "$HISTORY_DIR" ] || return 0
+  shopt -s nullglob
+  local d
+  for d in "$HISTORY_DIR"/*.git; do
+    [ -d "$d" ] || continue
+    "$fn" "$d"
+  done
+}
+
+cmd_list() {
+  if [ ! -d "$HISTORY_DIR" ]; then
+    echo "no shadow-history directory at $HISTORY_DIR — nothing tracked yet"
+    return 0
+  fi
+  shopt -s nullglob
+  local repos=("$HISTORY_DIR"/*.git)
+  if [ ${#repos[@]} -eq 0 ]; then
+    echo "no shadow repos yet"
+    return 0
+  fi
+  printf '%-10s  %-8s  %-32s  %s\n' "SIZE" "COMMITS" "REPO" "WORKSPACE"
+  local d size commits ws name
+  for d in "${repos[@]}"; do
+    size=$(du -sh "$d" 2>/dev/null | cut -f1)
+    commits=$(git --git-dir="$d" rev-list --count HEAD 2>/dev/null || echo "0")
+    ws=$(cat "$d/.workspace-path" 2>/dev/null || echo "(unknown)")
+    name=$(basename "$d")
+    printf '%-10s  %-8s  %-32s  %s\n' "$size" "$commits" "$name" "$ws"
+  done
+}
+
+cmd_gc() {
+  if [ ! -d "$HISTORY_DIR" ]; then
+    echo "nothing to do"
+    return 0
+  fi
+  shopt -s nullglob
+  local repos=("$HISTORY_DIR"/*.git)
+  if [ ${#repos[@]} -eq 0 ]; then
+    echo "no shadow repos yet"
+    return 0
+  fi
+  local d before after
+  for d in "${repos[@]}"; do
+    before=$(du -sh "$d" 2>/dev/null | cut -f1)
+    git --git-dir="$d" gc --auto --quiet 2>/dev/null || true
+    after=$(du -sh "$d" 2>/dev/null | cut -f1)
+    printf 'gc: %-32s  %s -> %s\n' "$(basename "$d")" "$before" "$after"
+  done
+}
+
+cmd_prune_orphan() {
+  local dry=0
+  case "${1:-}" in --dry-run) dry=1 ;; esac
+  [ -d "$HISTORY_DIR" ] || return 0
+  shopt -s nullglob
+  local removed=0 d ws
+  for d in "$HISTORY_DIR"/*.git; do
+    [ -d "$d" ] || continue
+    ws=$(cat "$d/.workspace-path" 2>/dev/null || echo "")
+    if [ -z "$ws" ] || [ ! -d "$ws" ]; then
+      if [ "$dry" -eq 1 ]; then
+        echo "would remove: $(basename "$d")  (workspace: ${ws:-<unrecorded>})"
+      else
+        echo "removing: $(basename "$d")  (workspace: ${ws:-<unrecorded>})"
+        rm -rf "$d"
+      fi
+      removed=$((removed+1))
+    fi
+  done
+  if [ "$dry" -eq 1 ]; then
+    echo "$removed orphan shadow repo(s) would be removed"
+  else
+    echo "removed $removed orphan shadow repo(s)"
+  fi
+}
+
+cmd_prune_old() {
+  local days="${1:-}"
+  if [ -z "$days" ]; then
+    echo "usage: history-admin prune-old <days> [--dry-run]" >&2
+    exit 1
+  fi
+  case "$days" in *[!0-9]*|"")
+    echo "days must be a positive integer" >&2; exit 1 ;;
+  esac
+  local dry=0
+  case "${2:-}" in --dry-run) dry=1 ;; esac
+  [ -d "$HISTORY_DIR" ] || return 0
+  shopt -s nullglob
+  local cutoff now removed=0 d last
+  now=$(date +%s)
+  cutoff=$(( now - days * 86400 ))
+  for d in "$HISTORY_DIR"/*.git; do
+    [ -d "$d" ] || continue
+    last=$(git --git-dir="$d" log -1 --format=%ct 2>/dev/null || echo 0)
+    if [ "$last" -lt "$cutoff" ]; then
+      local last_str
+      last_str=$(date -r "$last" '+%Y-%m-%d' 2>/dev/null || echo "unknown")
+      if [ "$dry" -eq 1 ]; then
+        echo "would remove: $(basename "$d")  (last activity: $last_str)"
+      else
+        echo "removing: $(basename "$d")  (last activity: $last_str)"
+        rm -rf "$d"
+      fi
+      removed=$((removed+1))
+    fi
+  done
+  if [ "$dry" -eq 1 ]; then
+    echo "$removed shadow repo(s) older than $days days would be removed"
+  else
+    echo "removed $removed shadow repo(s) older than $days days"
+  fi
+}
+
+cmd_remove() {
+  local name="${1:-}"
+  if [ -z "$name" ]; then
+    echo "usage: history-admin remove <dirname>" >&2
+    exit 1
+  fi
+  case "$name" in
+    *..*|/*|*/*)
+      echo "invalid name (must be a single directory name): $name" >&2
+      exit 1 ;;
+  esac
+  local target="$HISTORY_DIR/$name"
+  if [ ! -d "$target" ]; then
+    echo "no such shadow repo: $target" >&2
+    exit 1
+  fi
+  rm -rf "$target"
+  echo "removed: $target"
+}
+
+case "${1:-}" in
+  list)         shift; cmd_list "$@" ;;
+  gc)           shift; cmd_gc "$@" ;;
+  prune-orphan) shift; cmd_prune_orphan "$@" ;;
+  prune-old)    shift; cmd_prune_old "$@" ;;
+  remove)       shift; cmd_remove "$@" ;;
+  -h|--help|help|"") usage ;;
+  *) echo "unknown command: $1" >&2; usage; exit 1 ;;
+esac

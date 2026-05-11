@@ -1,0 +1,376 @@
+#!/usr/bin/env bash
+# `devcontainers <subcommand> [...]` — environment inspection and CLI dispatch
+# for the devcontainers plugin. The wrapper resolves per-workspace state from
+# $PWD, so callers don't need to know the on-disk path.
+#
+# Subcommands:
+#   doctor                       Probe env (Docker, Node, CLI, disk).
+#   install-cli                  npm install -g @devcontainers/cli.
+#   cli <args...>                Forward to the resolved CLI.
+#   state-dir                    Print per-workspace state dir.
+#   validate                     Read & validate the active config.
+#   build [--no-cache]           Build the dev container image.
+#         [--service <name>]
+#   up [--service <name>]        Bring up the dev container.
+#   exec [--service <name>] CMD  Run CMD inside the container.
+#   rebuild [--service <name>]   Recreate the container after config changes.
+#   sandbox-on [--service <n>]   Enable PreToolUse Bash sandbox for $PWD.
+#   sandbox-off                  Disable sandbox for $PWD.
+#   autorebuild-on               Enable PostToolUse auto-rebuild on config edits.
+#   autorebuild-off              Disable auto-rebuild for $PWD.
+#
+# Multi-service support: build/up/exec/rebuild accept --service. If --service
+# is omitted (or matches the primary `service` from devcontainer.json), the
+# wrapper uses the devcontainer CLI. For non-primary services it falls back
+# to `docker compose` since the devcontainer CLI only targets the primary.
+#
+# Examples:
+#   devcontainers doctor
+#   devcontainers exec -- ls /workspaces
+#   devcontainers exec --service db psql -U postgres
+#   devcontainers rebuild --service worker
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/../scripts/_paths.sh"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/../scripts/ensure-cli.sh"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/../scripts/_compose.sh"
+
+# Populate COMPOSE_FILE_FLAGS array (-f path1 -f path2 ...) from the active
+# config's dockerComposeFile entries. Returns 1 if no compose files configured.
+_dc_collect_compose_flags() {
+  COMPOSE_FILE_FLAGS=()
+  local f
+  while IFS= read -r f; do
+    [ -n "$f" ] && COMPOSE_FILE_FLAGS+=(-f "$f")
+  done < <(dc_compose_files)
+  [ ${#COMPOSE_FILE_FLAGS[@]} -gt 0 ]
+}
+
+case "${1:-}" in
+  doctor)
+    echo "devcontainers: doctor"
+    echo
+    # Docker
+    if command -v docker >/dev/null 2>&1; then
+      if dc_docker_ok; then
+        docker_ver=$(docker --version 2>/dev/null | head -n1)
+        echo "  [OK]   Docker: $docker_ver"
+      else
+        echo "  [FAIL] Docker: installed but daemon is unreachable"
+        echo "         Start Docker Desktop (or your daemon) and re-run."
+      fi
+    else
+      echo "  [FAIL] Docker: not found"
+      echo "         Install: https://docs.docker.com/get-docker/"
+    fi
+    # Node
+    if command -v node >/dev/null 2>&1; then
+      node_ver=$(node --version 2>/dev/null)
+      echo "  [OK]   Node.js: $node_ver"
+    else
+      echo "  [WARN] Node.js: not found"
+      echo "         Required for \`npx\` fallback. Install: https://nodejs.org"
+    fi
+    # jq — required by the sandbox + auto-rebuild hooks. They fail open if
+    # jq is missing (silent exit 0), so without this check it's hard to
+    # diagnose why the hooks stopped firing.
+    if command -v jq >/dev/null 2>&1; then
+      jq_ver=$(jq --version 2>/dev/null | head -n1)
+      echo "  [OK]   jq: $jq_ver"
+    else
+      echo "  [WARN] jq: not found"
+      echo "         Required by /devcontainers:sandbox-on and /devcontainers:autorebuild-on hooks."
+      echo "         Install via your package manager (brew install jq, apt install jq, etc.)."
+    fi
+    # devcontainer CLI
+    if command -v devcontainer >/dev/null 2>&1; then
+      cli_ver=$(devcontainer --version 2>/dev/null | head -n1)
+      echo "  [OK]   @devcontainers/cli: global install ($cli_ver)"
+    elif command -v npx >/dev/null 2>&1; then
+      echo "  [WARN] @devcontainers/cli: no global install (will use \`npx\` fallback)"
+      echo "         Install globally: /devcontainers:install-cli"
+    else
+      echo "  [FAIL] @devcontainers/cli: unavailable (no global, no \`npx\`)"
+      echo "         Install Node.js, then run /devcontainers:install-cli"
+    fi
+    # Disk space at Docker root (best-effort)
+    if dc_docker_ok; then
+      docker_root=$(docker info --format '{{.DockerRootDir}}' 2>/dev/null)
+      if [ -n "$docker_root" ] && [ -d "$docker_root" ]; then
+        avail=$(df -h "$docker_root" 2>/dev/null | awk 'NR==2 {print $4}')
+        [ -n "$avail" ] && echo "  [INFO] Disk: $avail available at $docker_root"
+      fi
+    fi
+    # Active config
+    if dc_has_config; then
+      echo "  [INFO] Config: $(dc_find_config)"
+    else
+      echo "  [INFO] Config: none in $PWD (run /devcontainers:init to create one)"
+    fi
+    exit 0
+    ;;
+  install-cli)
+    if command -v devcontainer >/dev/null 2>&1; then
+      cli_ver=$(devcontainer --version 2>/dev/null | head -n1)
+      echo "devcontainers: @devcontainers/cli already installed ($cli_ver)"
+      exit 0
+    fi
+    if ! command -v npm >/dev/null 2>&1; then
+      echo "devcontainers: npm not found — install Node.js first (https://nodejs.org)" >&2
+      exit 1
+    fi
+    echo "devcontainers: installing @devcontainers/cli globally…"
+    if npm install -g @devcontainers/cli; then
+      echo "devcontainers: installed."
+      exit 0
+    fi
+    echo "devcontainers: install failed — check npm permissions or try with sudo" >&2
+    exit 1
+    ;;
+  cli)
+    shift
+    dc_run "$@"
+    exit $?
+    ;;
+  state-dir)
+    printf '%s\n' "$DC_STATE_DIR"
+    exit 0
+    ;;
+  validate)
+    dc_run read-configuration --workspace-folder . --include-merged-configuration
+    exit $?
+    ;;
+  build|up|exec|rebuild)
+    SUBCMD="$1"; shift
+    SERVICE=""
+    NO_CACHE=""
+    REMAINING=()
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --service)
+          if [ -z "${2:-}" ]; then
+            echo "devcontainers: --service requires a value" >&2
+            exit 1
+          fi
+          SERVICE="$2"; shift 2
+          ;;
+        --no-cache)
+          # Only `build` actually uses --no-cache. For exec/up/rebuild, treat
+          # it as a positional so it either reaches the inner command (exec)
+          # or trips the "takes no positional args" guard (up/rebuild).
+          if [ "$SUBCMD" = "build" ]; then
+            NO_CACHE="--no-cache"; shift
+          else
+            REMAINING+=("$1"); shift
+          fi
+          ;;
+        --)
+          shift
+          while [ $# -gt 0 ]; do REMAINING+=("$1"); shift; done
+          ;;
+        *)
+          REMAINING+=("$1"); shift
+          ;;
+      esac
+    done
+
+    # Decide whether to route through devcontainer CLI or `docker compose`.
+    # Default (no --service or matches primary) → CLI. Otherwise compose.
+    USE_COMPOSE=0
+    if [ -n "$SERVICE" ]; then
+      PRIMARY=$(dc_primary_service)
+      if [ -n "$PRIMARY" ] && [ "$SERVICE" = "$PRIMARY" ]; then
+        USE_COMPOSE=0
+      else
+        USE_COMPOSE=1
+      fi
+    fi
+
+    # build/up/rebuild don't take positional args. Catch typos rather than
+    # silently dropping them (exec is the only subcommand that consumes
+    # REMAINING).
+    if [ "$SUBCMD" != "exec" ] && [ ${#REMAINING[@]} -gt 0 ]; then
+      echo "devcontainers: $SUBCMD takes no positional args; got: ${REMAINING[*]}" >&2
+      exit 1
+    fi
+
+    if [ "$USE_COMPOSE" -eq 1 ]; then
+      if ! dc_has_config; then
+        echo "devcontainers: no devcontainer.json found in $PWD — run /devcontainers:init first" >&2
+        exit 1
+      fi
+      if ! _dc_collect_compose_flags; then
+        echo "devcontainers: --service requires a docker-compose-based config (no dockerComposeFile in active devcontainer.json)" >&2
+        exit 1
+      fi
+      if ! command -v docker >/dev/null 2>&1; then
+        echo "devcontainers: --service requires the \`docker\` CLI on PATH" >&2
+        exit 1
+      fi
+      # Discover the project name from the running primary container so
+      # compose calls land in the same namespace devcontainer up created.
+      # Without -p, compose computes a default from the first compose file's
+      # parent dir name — almost always different from the CLI's choice, so
+      # exec/rebuild would hit a phantom project with no services.
+      PROJECT=$(dc_compose_project) || true
+      if [ -z "$PROJECT" ]; then
+        echo "devcontainers: no running devcontainer found for $PWD" >&2
+        echo "devcontainers: run /devcontainers:up first to bring up the primary service, then use --service for siblings" >&2
+        exit 1
+      fi
+      case "$SUBCMD" in
+        build)
+          if [ -n "$NO_CACHE" ]; then
+            docker compose -p "$PROJECT" "${COMPOSE_FILE_FLAGS[@]}" build --no-cache "$SERVICE"
+          else
+            docker compose -p "$PROJECT" "${COMPOSE_FILE_FLAGS[@]}" build "$SERVICE"
+          fi
+          ;;
+        up)
+          docker compose -p "$PROJECT" "${COMPOSE_FILE_FLAGS[@]}" up -d "$SERVICE"
+          ;;
+        exec)
+          if [ ${#REMAINING[@]} -eq 0 ]; then
+            echo "devcontainers: exec needs a command (e.g. devcontainers exec --service db -- psql -U postgres)" >&2
+            exit 1
+          fi
+          docker compose -p "$PROJECT" "${COMPOSE_FILE_FLAGS[@]}" exec "$SERVICE" "${REMAINING[@]}"
+          ;;
+        rebuild)
+          docker compose -p "$PROJECT" "${COMPOSE_FILE_FLAGS[@]}" up -d --force-recreate --no-deps "$SERVICE"
+          ;;
+      esac
+      exit $?
+    fi
+
+    # CLI path (default or --service matches primary).
+    case "$SUBCMD" in
+      build)
+        if [ -n "$NO_CACHE" ]; then
+          dc_run build --workspace-folder . --no-cache
+        else
+          dc_run build --workspace-folder .
+        fi
+        ;;
+      up)
+        dc_run up --workspace-folder .
+        ;;
+      exec)
+        if [ ${#REMAINING[@]} -eq 0 ]; then
+          echo "devcontainers: exec needs a command (e.g. devcontainers exec -- ls /workspaces)" >&2
+          exit 1
+        fi
+        dc_run exec --workspace-folder . -- "${REMAINING[@]}"
+        ;;
+      rebuild)
+        dc_run up --remove-existing-container --workspace-folder .
+        ;;
+    esac
+    exit $?
+    ;;
+  sandbox-on)
+    shift
+    SVC=""
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --service)
+          if [ -z "${2:-}" ]; then
+            echo "devcontainers: --service requires a value" >&2
+            exit 1
+          fi
+          SVC="$2"; shift 2
+          ;;
+        *)
+          echo "devcontainers: sandbox-on: unexpected argument: $1" >&2
+          exit 1
+          ;;
+      esac
+    done
+    if ! dc_has_config; then
+      echo "devcontainers: no devcontainer.json in $PWD — run /devcontainers:init first" >&2
+      exit 1
+    fi
+    # CLI presence check: at least one of `devcontainer` or `npx` must exist.
+    # We don't run `up` here — it's slow and may fail for benign reasons (no
+    # daemon yet). Sandbox enablement is cheap and reversible; the hook will
+    # surface any deeper problem the first time it tries to wrap a command.
+    if ! command -v devcontainer >/dev/null 2>&1 && ! command -v npx >/dev/null 2>&1; then
+      echo "devcontainers: no \`devcontainer\` CLI found, and \`npx\` is not available." >&2
+      echo "devcontainers: install Node.js (https://nodejs.org) or run /devcontainers:install-cli" >&2
+      exit 1
+    fi
+    dc_init_state_dir
+    : > "$DC_STATE_DIR/sandbox-enabled"
+    if [ -n "$SVC" ]; then
+      printf '%s\n' "$SVC" > "$DC_STATE_DIR/sandbox-service"
+      echo "devcontainers: sandbox enabled (service: $SVC)"
+    else
+      rm -f "$DC_STATE_DIR/sandbox-service"
+      echo "devcontainers: sandbox enabled (primary service)"
+    fi
+    echo "devcontainers: non-allowlisted Bash calls from Claude will run inside the container."
+    echo "devcontainers: turn off with /devcontainers:sandbox-off"
+    exit 0
+    ;;
+  sandbox-off)
+    if [ -f "$DC_STATE_DIR/sandbox-enabled" ]; then
+      rm -f "$DC_STATE_DIR/sandbox-enabled" "$DC_STATE_DIR/sandbox-service"
+      echo "devcontainers: sandbox disabled"
+    else
+      echo "devcontainers: sandbox already off"
+    fi
+    exit 0
+    ;;
+  autorebuild-on)
+    shift
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        *)
+          echo "devcontainers: autorebuild-on: unexpected argument: $1" >&2
+          exit 1
+          ;;
+      esac
+    done
+    if ! dc_has_config; then
+      echo "devcontainers: no devcontainer.json in $PWD — run /devcontainers:init first" >&2
+      exit 1
+    fi
+    # CLI presence check, same logic as sandbox-on. We don't run `up` here;
+    # the hook will exercise the wrapper's rebuild path the first time a
+    # watched file is edited and surface any deeper problem then.
+    if ! command -v devcontainer >/dev/null 2>&1 && ! command -v npx >/dev/null 2>&1; then
+      echo "devcontainers: no \`devcontainer\` CLI found, and \`npx\` is not available." >&2
+      echo "devcontainers: install Node.js (https://nodejs.org) or run /devcontainers:install-cli" >&2
+      exit 1
+    fi
+    dc_init_state_dir
+    : > "$DC_STATE_DIR/autorebuild-enabled"
+    echo "devcontainers: auto-rebuild enabled"
+    echo "devcontainers: editing .devcontainer/devcontainer.json (or referenced compose/Dockerfile) will trigger \`devcontainer up --remove-existing-container\`."
+    echo "devcontainers: turn off with /devcontainers:autorebuild-off"
+    exit 0
+    ;;
+  autorebuild-off)
+    if [ -f "$DC_STATE_DIR/autorebuild-enabled" ]; then
+      rm -f "$DC_STATE_DIR/autorebuild-enabled"
+      echo "devcontainers: auto-rebuild disabled"
+    else
+      echo "devcontainers: auto-rebuild already off"
+    fi
+    exit 0
+    ;;
+  "")
+    echo "devcontainers: usage: devcontainers <subcommand> [...]" >&2
+    echo "  Subcommands: doctor, install-cli, cli, state-dir, validate, build, up, exec, rebuild, sandbox-on, sandbox-off, autorebuild-on, autorebuild-off" >&2
+    exit 1
+    ;;
+  *)
+    echo "devcontainers: unknown subcommand: $1" >&2
+    echo "  Subcommands: doctor, install-cli, cli, state-dir, validate, build, up, exec, rebuild, sandbox-on, sandbox-off, autorebuild-on, autorebuild-off" >&2
+    exit 1
+    ;;
+esac

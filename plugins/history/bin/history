@@ -1,0 +1,293 @@
+#!/usr/bin/env bash
+# `history <subcommand|git-args>` — manage opt-in state and run git commands
+# against the shadow-history repo for the current $PWD. The wrapper resolves
+# the right repo deterministically from $PWD, so callers don't need to know
+# the on-disk path.
+#
+# Local subcommands:
+#   enable             Opt this workspace in. Creates the shadow repo if needed.
+#   disable | pause    Opt out. Existing shadow repo is preserved.
+#   status             Show whether this workspace is enabled and the repo path.
+#   transcript <ref>   Pull the full Claude Code transcript for the turn that
+#                      produced commit <ref>, using the Session trailer to
+#                      locate ~/.claude/projects/.../<session>.jsonl.
+#   remote [<url>|--clear]
+#                      With no args, show the remote URL. With <url>, set/replace
+#                      `origin`. With --clear, remove `origin`.
+#   push-enable [--yes]
+#                      Turn on auto-push after each turn. First call requires
+#                      --yes after printing the workspace exclude-set as a
+#                      privacy reminder.
+#   push-disable       Turn off auto-push.
+#   push               One-shot manual push to host/<hostname> on origin.
+#   pull               `git fetch origin --prune` to refresh remote-tracking refs.
+#   clone <url>        Bootstrap a shadow repo for $PWD from an existing remote.
+#
+# Anything else is forwarded to `git --git-dir=<shadow> --work-tree=$PWD ...`.
+#
+# Examples:
+#   history enable
+#   history log --oneline -20
+#   history diff HEAD~3
+#   history transcript HEAD
+#   history remote git@github.com:me/claude-history-myproject.git
+#   history push-enable --yes
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC1091
+source "$SCRIPT_DIR/../scripts/_paths.sh"
+
+case "${1:-}" in
+  enable)
+    if history_is_enabled; then
+      echo "history: already enabled for $PWD"
+      echo "history: shadow repo at $GIT_DIR"
+    else
+      history_enable_pwd
+      history_init_repo
+      echo "history: enabled for $PWD"
+      echo "history: shadow repo at $GIT_DIR"
+    fi
+    exit 0
+    ;;
+  disable|pause)
+    if history_is_enabled; then
+      history_disable_pwd
+      echo "history: disabled for $PWD"
+      [ -d "$GIT_DIR" ] && echo "history: shadow repo preserved at $GIT_DIR"
+    else
+      echo "history: already disabled for $PWD"
+    fi
+    exit 0
+    ;;
+  status)
+    if history_is_enabled; then
+      echo "history: enabled for $PWD"
+    else
+      echo "history: disabled for $PWD"
+    fi
+    if [ -d "$GIT_DIR" ]; then
+      echo "history: shadow repo at $GIT_DIR"
+      remote_url=$(history_remote_url)
+      if [ -n "$remote_url" ]; then
+        echo "history: remote: $remote_url"
+        branch=$(history_branch_for_host)
+        if history_auto_push_enabled; then
+          echo "history: auto-push: on (branch: $branch)"
+        else
+          echo "history: auto-push: off (branch: $branch)"
+        fi
+        # Ahead-count vs origin/<branch>. Only meaningful if we have at least
+        # one local commit and have ever fetched the remote ref.
+        if git --git-dir="$GIT_DIR" rev-parse --quiet --verify HEAD >/dev/null 2>&1; then
+          if git --git-dir="$GIT_DIR" rev-parse --quiet --verify "refs/remotes/origin/$branch" >/dev/null 2>&1; then
+            ahead=$(git --git-dir="$GIT_DIR" rev-list --count "refs/remotes/origin/$branch..HEAD" 2>/dev/null || echo 0)
+            echo "history: $ahead turn(s) ahead of origin/$branch"
+          else
+            local_count=$(git --git-dir="$GIT_DIR" rev-list --count HEAD 2>/dev/null || echo 0)
+            echo "history: $local_count turn(s) not yet pushed (origin/$branch unknown — run: history pull)"
+          fi
+        fi
+      else
+        echo "history: remote: not configured"
+      fi
+    else
+      echo "history: no shadow repo yet"
+    fi
+    exit 0
+    ;;
+  transcript)
+    if [ ! -d "$GIT_DIR" ]; then
+      echo "history: no shadow-history repo for $PWD" >&2
+      echo "history: nothing to look up" >&2
+      exit 1
+    fi
+    shift
+    if [ "${1:-}" = "" ]; then
+      echo "history: usage: history transcript <ref>" >&2
+      exit 1
+    fi
+    exec python3 "$SCRIPT_DIR/../scripts/show-transcript.py" \
+      --git-dir "$GIT_DIR" --workspace "$PWD" "$1"
+    ;;
+  remote)
+    if [ ! -d "$GIT_DIR" ]; then
+      echo "history: no shadow-history repo for $PWD" >&2
+      echo "history: run: history enable" >&2
+      exit 1
+    fi
+    shift
+    case "${1:-}" in
+      "")
+        url=$(history_remote_url)
+        if [ -n "$url" ]; then
+          echo "$url"
+        else
+          echo "history: no remote configured"
+        fi
+        ;;
+      --clear)
+        if [ -z "$(history_remote_url)" ]; then
+          echo "history: no remote to clear"
+          exit 0
+        fi
+        git --git-dir="$GIT_DIR" remote remove origin
+        echo "history: remote cleared"
+        ;;
+      -*)
+        echo "history: usage: history remote [<url>|--clear]" >&2
+        exit 1
+        ;;
+      *)
+        new_url="$1"
+        if [ -n "$(history_remote_url)" ]; then
+          git --git-dir="$GIT_DIR" remote set-url origin "$new_url"
+        else
+          git --git-dir="$GIT_DIR" remote add origin "$new_url"
+        fi
+        echo "history: remote set to $new_url"
+        ;;
+    esac
+    exit 0
+    ;;
+  push-enable)
+    if [ ! -d "$GIT_DIR" ]; then
+      echo "history: no shadow-history repo for $PWD" >&2
+      echo "history: run: history enable" >&2
+      exit 1
+    fi
+    if [ -z "$(history_remote_url)" ]; then
+      echo "history: no remote configured — set one first:" >&2
+      echo "  history remote <url>" >&2
+      exit 1
+    fi
+    yes_flag=0
+    [ "${2:-}" = "--yes" ] && yes_flag=1
+    if ! history_push_acked && [ "$yes_flag" -eq 0 ]; then
+      cat <<EOF
+history: push-enable will push this workspace's shadow history to:
+  $(history_remote_url)
+  branch: $(history_branch_for_host)
+
+The shadow repo captures the full workspace diff after every Claude turn.
+The following patterns are excluded from each commit ($GIT_DIR/info/exclude):
+
+EOF
+      sed 's/^/  /' "$GIT_DIR/info/exclude"
+      cat <<EOF
+
+Anything outside that exclude list — including any secrets or private data
+in tracked files — will be pushed upstream. Re-run with --yes if that's
+acceptable for this remote:
+
+  history push-enable --yes
+EOF
+      exit 1
+    fi
+    git --git-dir="$GIT_DIR" config --bool history.push-acked true
+    git --git-dir="$GIT_DIR" config --bool history.auto-push true
+    echo "history: auto-push enabled (branch: $(history_branch_for_host))"
+    exit 0
+    ;;
+  push-disable)
+    if [ ! -d "$GIT_DIR" ]; then
+      echo "history: no shadow-history repo for $PWD" >&2
+      exit 1
+    fi
+    if ! history_auto_push_enabled; then
+      echo "history: auto-push already disabled"
+      exit 0
+    fi
+    git --git-dir="$GIT_DIR" config --bool history.auto-push false
+    echo "history: auto-push disabled"
+    exit 0
+    ;;
+  push)
+    if [ ! -d "$GIT_DIR" ]; then
+      echo "history: no shadow-history repo for $PWD" >&2
+      echo "history: run: history enable" >&2
+      exit 1
+    fi
+    if [ -z "$(history_remote_url)" ]; then
+      echo "history: no remote configured — set one first:" >&2
+      echo "  history remote <url>" >&2
+      exit 1
+    fi
+    if ! git --git-dir="$GIT_DIR" rev-parse --quiet --verify HEAD >/dev/null 2>&1; then
+      echo "history: nothing to push yet (no commits)" >&2
+      exit 1
+    fi
+    branch=$(history_branch_for_host)
+    git --git-dir="$GIT_DIR" push origin "HEAD:refs/heads/$branch"
+    exit $?
+    ;;
+  pull)
+    if [ ! -d "$GIT_DIR" ]; then
+      echo "history: no shadow-history repo for $PWD" >&2
+      echo "history: run: history enable" >&2
+      exit 1
+    fi
+    if [ -z "$(history_remote_url)" ]; then
+      echo "history: no remote configured — set one first:" >&2
+      echo "  history remote <url>" >&2
+      exit 1
+    fi
+    git --git-dir="$GIT_DIR" fetch origin --prune
+    exit $?
+    ;;
+  clone)
+    shift
+    if [ "${1:-}" = "" ]; then
+      echo "history: usage: history clone <url>" >&2
+      exit 1
+    fi
+    if [ -d "$GIT_DIR" ]; then
+      echo "history: shadow repo already exists at $GIT_DIR" >&2
+      echo "history: refusing to overwrite — remove it first or run on a fresh workspace" >&2
+      exit 1
+    fi
+    mkdir -p "$HISTORY_DIR"
+    if ! git clone --bare --quiet "$1" "$GIT_DIR"; then
+      echo "history: clone failed" >&2
+      exit 1
+    fi
+    # Match the layout history_init_repo would produce.
+    cat > "$GIT_DIR/info/exclude" <<'EOF'
+.env
+.env.*
+node_modules/
+dist/
+build/
+.DS_Store
+*.log
+.git/
+EOF
+    printf '%s\n' "$PWD" > "$GIT_DIR/.workspace-path"
+    history_enable_pwd
+    git --git-dir="$GIT_DIR" fetch origin --prune --quiet 2>/dev/null || true
+    echo "history: cloned to $GIT_DIR"
+    echo "history: enabled for $PWD"
+    exit 0
+    ;;
+esac
+
+if [ ! -d "$GIT_DIR" ]; then
+  echo "history: no shadow-history repo for $PWD" >&2
+  if ! history_is_enabled; then
+    echo "history: this workspace is not opted in. Run: history enable" >&2
+  else
+    echo "history: expected at $GIT_DIR" >&2
+    echo "history: it'll be created automatically on the next user prompt" >&2
+  fi
+  exit 1
+fi
+
+# Repo exists but workspace was disabled — git commands still work against the
+# preserved history; we just remind the user that no new turns are being
+# captured until they re-enable.
+if ! history_is_enabled; then
+  echo "history: capture is currently disabled for $PWD (run: history enable to resume)" >&2
+fi
+
+exec git --git-dir="$GIT_DIR" --work-tree="$PWD" "$@"

@@ -1,0 +1,8 @@
+{
+  "name": "devcontainers",
+  "description": "Author, explain, lint, run, and sandbox via devcontainers (containers.dev). Optional opt-in hooks route Claude's Bash calls into the dev container and auto-rebuild on config edits.",
+  "version": "0.1.0",
+  "author": {
+    "name": "zeckon"
+  }
+}
