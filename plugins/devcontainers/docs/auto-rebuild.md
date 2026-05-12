@@ -2,14 +2,23 @@
 
 Detects edits to `devcontainer.json` (and referenced compose / Dockerfile) and recreates the container so the change takes effect without a manual `/devcontainers:rebuild`. Opt-in per workspace.
 
-## Enable / disable
+## Enable
+
+Start watching `devcontainer.json` and referenced files for the current workspace:
 
 ```text
 /devcontainers:autorebuild-on
-/devcontainers:autorebuild-off
 ```
 
-State is per-workspace; off by default.
+State is per-workspace and off by default.
+
+## Disable
+
+Stop watching. Edits no longer trigger automatic rebuilds:
+
+```text
+/devcontainers:autorebuild-off
+```
 
 ## How it works
 

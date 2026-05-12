@@ -2,14 +2,29 @@
 
 Sandbox mode auto-routes Claude's non-allowlisted Bash calls into the dev container, so commands the model runs land inside the container rather than on the host. Opt-in per workspace.
 
-## Enable / disable
+## Enable
+
+Turn on sandbox routing for the current workspace:
 
 ```text
-/devcontainers:sandbox-on [--service <name>]
-/devcontainers:sandbox-off
+/devcontainers:sandbox-on
 ```
 
-`--service` targets a non-primary compose service. State is per-workspace; off by default.
+For compose-based configs, pass `--service <name>` to target a non-primary service instead of the primary container:
+
+```text
+/devcontainers:sandbox-on --service <name>
+```
+
+State is per-workspace and off by default.
+
+## Disable
+
+Stop routing Bash calls through the container:
+
+```text
+/devcontainers:sandbox-off
+```
 
 ## How it works
 

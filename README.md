@@ -4,10 +4,19 @@ Personal Claude Code plugin marketplace.
 
 ## Install
 
+Register the marketplace once per Claude Code instance:
+
 ```text
 /plugin marketplace add zeckon/claude-plugins
+```
+
+Then install any plugin from it by name:
+
+```text
 /plugin install <plugin>@zeckon-claude-plugins
 ```
+
+Replace `<plugin>` with `history`, `devcontainers`, etc. from the table below.
 
 ## Plugins
 

@@ -4,8 +4,15 @@ Claude Code plugin for [containers.dev](https://containers.dev/) dev containers.
 
 ## Install
 
+Register the marketplace (once per Claude Code instance — skip if you've already added it for another plugin):
+
 ```text
 /plugin marketplace add zeckon/claude-plugins
+```
+
+Install this plugin:
+
+```text
 /plugin install devcontainers@zeckon-claude-plugins
 ```
 
@@ -20,10 +27,22 @@ Run `/devcontainers:doctor` to probe the environment.
 
 ## Quick start
 
+Scaffold a `devcontainer.json` for the current project. Refuses if one already exists:
+
 ```text
-/devcontainers:init                   # scaffold .devcontainer/devcontainer.json
-/devcontainers:up                     # bring the container up
-/devcontainers:exec -- bash           # shell into it
+/devcontainers:init
+```
+
+Bring the container up (builds the image on first run):
+
+```text
+/devcontainers:up
+```
+
+Open an interactive shell inside the container:
+
+```text
+/devcontainers:exec -- bash
 ```
 
 ## Slash commands

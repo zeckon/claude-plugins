@@ -7,12 +7,19 @@ Shadow repos are local-only by default. The remote-sync feature is opt-in and ad
 
 ## Setup
 
+Configure a git remote URL for the current project's shadow repo. The plugin doesn't create the remote for you — point at an existing empty git repo (use a **private** one; see the privacy note below):
+
 ```text
 /history:remote git@github.com:me/claude-history-myproject.git
+```
+
+Turn on auto-push. The first call refuses without `--yes` and prints the workspace's `info/exclude` set as a privacy reminder — review it before acknowledging:
+
+```text
 /history:push-enable --yes
 ```
 
-`/history:push-enable` prints the workspace's `info/exclude` set on its first call and refuses without `--yes`. The shadow repo captures full workspace diffs after every turn — anything outside that exclude list (including any secrets in tracked files) gets pushed upstream. Use a private repo and add anything sensitive to `~/.claude-history/<dir>/info/exclude` before enabling.
+The shadow repo captures full workspace diffs after every turn — anything outside that exclude list (including any secrets in tracked files) gets pushed upstream. Add anything sensitive to `~/.claude-history/<dir>/info/exclude` before enabling.
 
 ## Branch model
 

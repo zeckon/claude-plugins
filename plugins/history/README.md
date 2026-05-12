@@ -6,18 +6,31 @@ The shadow repo is a separate bare git repository — it does not touch the proj
 
 ## Install
 
+Register the marketplace (once per Claude Code instance — skip if you've already added it for another plugin):
+
 ```text
 /plugin marketplace add zeckon/claude-plugins
+```
+
+Install this plugin:
+
+```text
 /plugin install history@zeckon-claude-plugins
 ```
 
-Installation alone doesn't capture anything — the plugin is **opt-in per workspace**. In each project where you want history captured:
+Installation alone doesn't capture anything — the plugin is **opt-in per workspace**.
+
+## Opt in to capture
+
+In each project where you want history captured, run:
 
 ```text
 /history:enable
 ```
 
-After that, every Claude turn in that workspace produces a shadow commit. To stop:
+This creates the shadow repo for the current `$PWD` (if one doesn't already exist) and registers the workspace. From this point on, every Claude turn in that workspace produces a shadow commit.
+
+To stop capturing in a workspace:
 
 ```text
 /history:disable
@@ -52,14 +65,36 @@ The set of opted-in workspaces lives at `~/.claude-history/enabled-paths` — on
 
 ## Direct git access
 
-`bin/history <git-args>` is a wrapper that resolves the correct shadow repo for `$PWD` and forwards arguments to git. Useful when you want any git operation the slash commands don't expose:
+`bin/history <git-args>` is a wrapper that resolves the correct shadow repo for `$PWD` and forwards arguments to git. Useful when you want any git operation the slash commands don't expose.
+
+Show the last 50 turns as one line each:
 
 ```bash
 bin/history log --oneline -50
+```
+
+Diff the current workspace against three turns ago:
+
+```bash
 bin/history diff HEAD~3
+```
+
+Search prompts and tracked content across the last five turns:
+
+```bash
 bin/history grep "TODO" HEAD~5
+```
+
+Show the reflog — every ref movement, including commits that fell out of the main timeline:
+
+```bash
 bin/history reflog
-bin/history gc                 # compact disk usage
+```
+
+Compact the on-disk repo when it has grown large:
+
+```bash
+bin/history gc
 ```
 
 The wrapper lives at `${CLAUDE_PLUGIN_ROOT}/bin/history`. It is intentionally invoked by absolute path, so it does not shadow the bash builtin `history`.
@@ -127,13 +162,22 @@ The plugin does not auto-install dependencies. If git is missing, the hook exits
 /plugin uninstall history@zeckon-claude-plugins
 ```
 
-Hooks stop firing immediately. Existing shadow repos remain at `~/.claude-history/`. To wipe them:
+Hooks stop firing immediately. Existing shadow repos remain at `~/.claude-history/`.
+
+To inspect what's still on disk before deleting anything:
 
 ```bash
-# inspect what's there first
 bash ~/.claude/plugins/cache/zeckon-claude-plugins/history/<version>/bin/history-admin list
-# then either:
-rm -rf ~/.claude-history          # nuke everything
-# or, while the plugin cache still exists:
+```
+
+To wipe every shadow repo on this machine in one shot:
+
+```bash
+rm -rf ~/.claude-history
+```
+
+To delete one shadow repo at a time (works only while the plugin cache still exists — uninstall doesn't remove the cache immediately):
+
+```bash
 bash ~/.claude/plugins/cache/zeckon-claude-plugins/history/<version>/bin/history-admin remove <dirname>
 ```
