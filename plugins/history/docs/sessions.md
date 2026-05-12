@@ -6,14 +6,21 @@ To keep commits from different sessions distinguishable, every shadow commit get
 
 ## Useful queries
 
+Show only commits from a specific session — paste in a `session_id` to scope `log` output to one session:
+
 ```bash
-# show only commits from a specific session
 bin/history log --grep "Session: <session-id>"
+```
 
-# list every session_id that has touched this repo
+List every distinct `session_id` that has touched this shadow repo:
+
+```bash
 bin/history log --format='%(trailers:key=Session,valueonly,unfold)' | sort -u
+```
 
-# show recent commits with their session id alongside
+Show recent commits with their session id alongside the subject — useful for skimming who-did-what across sessions:
+
+```bash
 bin/history log --format='%h %s%n  session: %(trailers:key=Session,valueonly,unfold)' --no-color
 ```
 
