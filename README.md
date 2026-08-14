@@ -24,6 +24,7 @@ Replace `<plugin>` with `history`, `devcontainers`, etc. from the table below.
 | --- | --- |
 | [`history`](plugins/history/README.md) | Auto-commits each Claude turn (prompt + workspace state) to a per-project shadow git repo, with skills to inspect and restore from the history. |
 | [`devcontainers`](plugins/devcontainers/README.md) | Author, explain, lint, run, and sandbox via devcontainers (containers.dev). Optional opt-in hooks route Claude's Bash calls into the dev container and auto-rebuild on config edits. |
+| [`explain`](plugins/explain/README.md) | Turns a code change into a lesson. `/explain:diff` investigates a diff, branch, or PR and generates a self-contained interactive HTML explainer with diagrams, a code walkthrough, and a comprehension quiz. |
 
 Each plugin's slash commands are namespaced as `/<plugin>:<skill>` (e.g. `/history:log`).
 

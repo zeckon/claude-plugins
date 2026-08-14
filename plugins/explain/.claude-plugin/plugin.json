@@ -1,0 +1,8 @@
+{
+  "name": "explain",
+  "description": "Generates rich, self-contained interactive HTML explanations of code changes. /explain:diff teaches a diff, branch, or PR — background, problem, intuition, diagrams, code walkthrough, and a comprehension quiz.",
+  "version": "0.1.0",
+  "author": {
+    "name": "zeckon"
+  }
+}
