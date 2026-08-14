@@ -14,6 +14,11 @@
       "name": "devcontainers",
       "source": "./plugins/devcontainers",
       "description": "Author, explain, lint, run, and sandbox via devcontainers (containers.dev). Optional opt-in hooks route Claude's Bash calls into the dev container and auto-rebuild on config edits."
+    },
+    {
+      "name": "explain",
+      "source": "./plugins/explain",
+      "description": "Turns a code change into a lesson. /explain:diff investigates a diff, branch, or PR and generates a self-contained interactive HTML explainer — background, problem, intuition, diagrams, code walkthrough, and a comprehension quiz."
     }
   ]
 }
