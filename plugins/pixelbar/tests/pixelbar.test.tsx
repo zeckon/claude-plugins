@@ -57,38 +57,49 @@ function decode(raster: { props: Record<string, unknown> } | undefined): string[
 }
 
 describe('pixelbar strip', () => {
-  test('paints two full-width rows of project and session facts', async ($, on) => {
+  test('paints one full-width row of project and session facts', async ($, on) => {
     fakeSession(on)
     await $.session.start({ cwd: '/Users/zeckon/workspace/claude-plugins', surface: 'terminal', isInteractive: true })
 
-    const ui = await $.ui.mount(HINT(180))
-    const raster = await ui.find({ type: 'Raster' })
-    const [top, bottom] = decode(raster as never)
-    console.log(`\n${top}\n${bottom}`)
+    const ui = await $.ui.mount(HINT(200, '\u23F5\u23F5 auto mode on (shift+tab to cycle) \u00B7 ? for shortcuts'))
+    const raster = (await ui.find({ type: 'Raster' })) as never as { props: { columns: number; rows: number } }
+    const [row] = decode(raster as never)
+    console.log(`\n${row}`)
 
-    expect((raster as never as { props: { columns: number; rows: number } }).props.rows).toBe(2)
-    expect((raster as never as { props: { columns: number } }).props.columns).toBe(180)
-    for (const words of ['claude-plugins', 'feat/pixelbar *2 ^2', 'OPUS 5.5', '███░░ HIGH', '7 TURNS $1.23']) {
-      expect(top).toContain(words)
+    expect(raster.props.rows).toBe(1)
+    expect(raster.props.columns).toBe(200)
+    for (const words of ['\u259B\u259C', 'MODE AUTO', 'claude-plugins', 'feat/pixelbar *2 ^2', 'OPUS 5.5', '\u2588\u2588\u2588\u2591\u2591 HIGH', 'CTX', '42% 84K/200K', '5H', '37%', '7T $1.23', '? for shortcuts']) {
+      expect(row).toContain(words)
     }
-    for (const words of ['CTX', '42% 84K/200K', '5H', '37%', '? for shortcuts']) {
-      expect(bottom).toContain(words)
-    }
+    expect(row).not.toContain('shift+tab')
     await ui.unmount()
   })
 
-  test('fits a narrow terminal, keeping folder and context', async ($, on) => {
+  test('reads plan mode and the default mode off the hint', async ($, on) => {
     fakeSession(on)
     await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
 
-    const ui = await $.ui.mount(HINT(70, 'esc to interrupt'))
-    const [top, bottom] = decode((await ui.find({ type: 'Raster' })) as never)
-    console.log(`\n${top}\n${bottom}`)
+    const plan = await $.ui.mount(HINT(200, '\u23F8 plan mode on (shift+tab to cycle)'))
+    expect(decode((await plan.find({ type: 'Raster' })) as never)[0]).toContain('MODE PLAN')
+    await plan.unmount()
 
-    expect(top).toContain('claude-plugins')
-    expect(top).not.toContain('SESSION')
-    expect(bottom).toContain('42%')
-    expect(bottom).toContain('esc to interrupt')
+    const plain = await $.ui.mount(HINT(200))
+    expect(decode((await plain.find({ type: 'Raster' })) as never)[0]).toContain('MODE DEFAULT')
+    await plain.unmount()
+  })
+
+  test('fits a narrow terminal, keeping mode, folder and context', async ($, on) => {
+    fakeSession(on)
+    await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+
+    const ui = await $.ui.mount(HINT(90, 'esc to interrupt'))
+    const [row] = decode((await ui.find({ type: 'Raster' })) as never)
+    console.log(`\n${row}`)
+
+    expect(row).toContain('MODE DEFAULT')
+    expect(row).toContain('claude-plugins')
+    expect(row).toContain('42%')
+    expect(row).not.toContain('SESSION')
     await ui.unmount()
   })
 

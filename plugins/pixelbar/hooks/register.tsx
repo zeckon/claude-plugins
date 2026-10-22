@@ -14,38 +14,23 @@ const lastAtom = atom({ plugin: 'pixelbar', key: 'last' } as const, null)
 const totalAtom = atom({ plugin: 'pixelbar', key: 'total' } as const, ZERO)
 const historyAtom = atom({ plugin: 'pixelbar', key: 'history' } as const, [])
 
-// ── Palette (PICO-8), as 0xRRGGBB ────────────────────────────────────────
+// ── Palette: one warm clay ramp, dark to light, plus one alert tone ──────
 
-const BASE = 0x111a33 // the strip's ground
-const NAVY = 0x1d2b53
-const CREAM = 0xfff1e8
-const BLUE = 0x29adff
-const GREEN = 0x00e436
-const PINK = 0xff77a8
-const ORANGE = 0xffa300
-const YELLOW = 0xffec27
-const RED = 0xff004d
-const PEACH = 0xffccaa
-const LAVENDER = 0x83769c
-const DIM = 0x3a4466 // empty gauge cells, dither
-const MUTED = 0x8b93b0 // the engine's hint text
-
-function shade(c: number, f: number): number {
-  const ch = (s: number) => Math.round(((c >> s) & 0xff) * f) << s
-  return ch(16) | ch(8) | ch(0)
-}
+const BASE = 0x14100e // the strip's ground
+const C1 = 0x241b17 // empty gauge cells, trail
+const C2 = 0x3d2c24 // tile ground
+const C3 = 0x6b4a3b // quiet text
+const C4 = 0xa96a50 // labels
+const ACCENT = 0xd97757 // the walker, the mode tile, filled gauges
+const LIGHT = 0xf2cdbb // values
+const ALERT = 0xff5a36 // context past 80%
 
 function mix(a: number, b: number, t: number): number {
   const ch = (s: number) => Math.round(((a >> s) & 0xff) * (1 - t) + ((b >> s) & 0xff) * t) << s
   return ch(16) | ch(8) | ch(0)
 }
 
-/** Green → yellow → red along a gauge. */
-function heat(t: number): number {
-  return t < 0.5 ? mix(GREEN, YELLOW, t * 2) : mix(YELLOW, RED, (t - 0.5) * 2)
-}
-
-// ── Canvas: one Raster's cells ───────────────────────────────────────────
+// ── Canvas: one Raster row's cells ───────────────────────────────────────
 
 /**
  * A Raster cell holds one printable width-1 character; anything else refuses
@@ -58,26 +43,21 @@ function ascii(s: string): string {
 
 class Canvas {
   readonly cells: Uint32Array
+  readonly h = 1
 
-  constructor(
-    readonly w: number,
-    readonly h: number,
-  ) {
-    this.cells = new Uint32Array(w * h * 3)
-    for (let i = 0; i < w * h; i++) this.cells.set([0x20, CREAM, BASE], i * 3)
+  constructor(readonly w: number) {
+    this.cells = new Uint32Array(w * 3)
+    for (let i = 0; i < w; i++) this.cells.set([0x20, LIGHT, BASE], i * 3)
   }
 
-  put(x: number, y: number, ch: string, fg: number, bg: number): void {
-    if (x < 0 || x >= this.w || y < 0 || y >= this.h) return
-    this.cells.set([ch.codePointAt(0) ?? 0x20, fg, bg], (y * this.w + x) * 3)
+  put(x: number, ch: string, fg: number, bg = BASE): void {
+    if (x < 0 || x >= this.w) return
+    this.cells.set([ch.codePointAt(0) ?? 0x20, fg, bg], x * 3)
   }
 
-  /** Writes `s` from `x`, clipped at `limit`; returns the column after it. */
-  text(x: number, y: number, s: string, fg: number, bg: number, limit = this.w): number {
-    for (const ch of s) {
-      if (x >= limit) break
-      this.put(x++, y, ch, fg, bg)
-    }
+  /** Writes `s` from `x`, clipped at the edge; returns the column after it. */
+  text(x: number, s: string, fg: number, bg = BASE): number {
+    for (const ch of s) this.put(x++, ch, fg, bg)
     return x
   }
 
@@ -102,42 +82,114 @@ function toBase64(bytes: Uint8Array): string {
   return out
 }
 
-// ── Sprite: a 7×4 invader in half blocks, two frames ─────────────────────
+// ── Mode: read off the engine's hint line ────────────────────────────────
 
-const SPRITE_W = 7
-const FRAMES = [
-  ['..bbb..', '.bwbwb.', 'bbbbbbb', 'b.b.b.b'],
-  ['..bbb..', '.bwbwb.', 'bbbbbbb', '.b.b.b.'],
-] as const
+const MODES: readonly (readonly [RegExp, string])[] = [
+  [/auto mode on/i, 'AUTO'],
+  [/plan mode on/i, 'PLAN'],
+  [/accept edits on/i, 'ACCEPT EDITS'],
+  [/bypass permissions on/i, 'BYPASS'],
+  [/don'?t ask (mode )?on/i, "DON'T ASK"],
+]
 
-function drawSprite(c: Canvas, x0: number, frame: number, body: number): void {
-  const grid = FRAMES[frame % FRAMES.length] ?? FRAMES[0]
-  const colorOf = (ch: string | undefined) => (ch === 'b' ? body : ch === 'w' ? CREAM : null)
-  for (let row = 0; row < 2; row++) {
-    for (let x = 0; x < SPRITE_W; x++) {
-      const top = colorOf(grid[row * 2]?.[x])
-      const bottom = colorOf(grid[row * 2 + 1]?.[x])
-      if (top !== null && bottom !== null) c.put(x0 + x, row, '▀', top, bottom)
-      else if (top !== null) c.put(x0 + x, row, '▀', top, BASE)
-      else if (bottom !== null) c.put(x0 + x, row, '▄', bottom, BASE)
+/** The permission mode the hint names, and the hint with that pill taken out. */
+export function splitHint(hint: string): { mode: string; rest: string } {
+  const text = ascii(hint)
+  for (const [re, mode] of MODES) {
+    if (re.test(text)) {
+      const rest = text
+        .replace(re, ' ')
+        .replace(/\(shift\+tab to cycle\)/i, ' ')
+        .replace(/\s+/g, ' ')
+        .replace(/^[\s|·-]+|[\s|·-]+$/g, '')
+      return { mode, rest }
     }
+  }
+  return { mode: 'DEFAULT', rest: text }
+}
+
+// ── Items: what the row is made of, laid out left to right ───────────────
+
+type Item = { width: number; priority: number; draw: (c: Canvas, x: number) => void }
+
+/** The walker: 2 cells, 4×2 pixels in quarter blocks, legs out / legs in. */
+const WALK = ['▛▜', '▜▛'] as const
+
+function walker(frame: number, working: boolean): Item {
+  const pose = WALK[working ? frame % WALK.length : 0] ?? WALK[0]
+  return { width: 2, priority: 0, draw: (c, x) => c.text(x, pose, working ? ACCENT : C4) }
+}
+
+/** `▐ LABEL value ▌`: half-block edges give the tile a stepped pixel outline. */
+function tile(label: string, value: string, priority: number, isStrong = false): Item {
+  const bg = isStrong ? ACCENT : C2
+  return {
+    width: label.length + value.length + 5,
+    priority,
+    draw: (c, x) => {
+      c.put(x++, '▐', bg)
+      x = c.text(x, ` ${label} `, isStrong ? BASE : C4, bg)
+      x = c.text(x, `${value} `, isStrong ? BASE : LIGHT, bg)
+      c.put(x, '▌', bg)
+    },
   }
 }
 
-// ── Row 1: pixel tiles ───────────────────────────────────────────────────
+function gauge(c: Canvas, x: number, width: number, pct: number, isHot: boolean): number {
+  const filled = Math.round((Math.min(100, Math.max(0, pct)) / 100) * width)
+  for (let i = 0; i < width; i++) {
+    const t = i / Math.max(1, width - 1)
+    c.put(x + i, '▆', i >= filled ? C1 : isHot ? ALERT : mix(C3, ACCENT, t))
+  }
+  return x + width
+}
 
-type Tile = { label: string; value: string; color: number; ink?: number; priority: number }
+function contextItem(snap: Snapshot, columns: number): Item {
+  const pct = snap.ctxPercent ?? 0
+  const isHot = pct >= 80
+  const text = ` ${pct}% ${compact(snap.ctxTokens ?? 0)}/${compact(snap.ctxWindow)}`
+  const g = Math.min(24, Math.max(6, Math.floor(columns * 0.1)))
+  return {
+    width: 4 + g + text.length,
+    priority: 1,
+    draw: (c, x) => {
+      x = c.text(x, 'CTX ', C4)
+      x = gauge(c, x, g, pct, isHot)
+      c.text(x, text, isHot ? ALERT : LIGHT)
+    },
+  }
+}
 
-/** `▐ LABEL  value ▌`: half-block edges give each tile a stepped pixel outline. */
-const tileWidth = (t: Tile) => t.label.length + t.value.length + 6
+const SPARKS = '▁▂▃▄▅▆▇█'
 
-function drawTile(c: Canvas, x: number, t: Tile): number {
-  const labelBg = shade(t.color, 0.45)
-  c.put(x++, 0, '▐', labelBg, BASE)
-  x = c.text(x, 0, ` ${t.label} `, CREAM, labelBg)
-  x = c.text(x, 0, ` ${t.value} `, t.ink ?? NAVY, t.color)
-  c.put(x++, 0, '▌', t.color, BASE)
-  return x
+function sparkItem(history: number[]): Item | null {
+  const spark = history.slice(-12)
+  if (!spark.length) return null
+  const max = Math.max(1, ...spark)
+  return {
+    width: 4 + spark.length,
+    priority: 4,
+    draw: (c, x) => {
+      x = c.text(x, 'TOK ', C4)
+      for (const v of spark) {
+        const level = Math.min(SPARKS.length - 1, Math.floor((v / max) * (SPARKS.length - 1)))
+        c.put(x++, SPARKS[level]!, mix(C3, LIGHT, level / (SPARKS.length - 1)))
+      }
+    },
+  }
+}
+
+function limitItem(pct: number): Item {
+  const text = ` ${Math.round(pct)}%`
+  return {
+    width: 3 + 6 + text.length,
+    priority: 4,
+    draw: (c, x) => {
+      x = c.text(x, '5H ', C4)
+      x = gauge(c, x, 6, pct, pct >= 90)
+      c.text(x, text, LIGHT)
+    },
+  }
 }
 
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
@@ -149,93 +201,32 @@ function effortValue(effort: string | null): string {
   return level < 0 ? word : `${'█'.repeat(level + 1)}${'░'.repeat(EFFORTS.length - level - 1)} ${word}`
 }
 
-function tiles(snap: Snapshot, total: Tokens): Tile[] {
-  const out: Tile[] = [{ label: 'DIR', value: clip(snap.dir, 24), color: BLUE, priority: 1 }]
+function items(snap: Snapshot, total: Tokens, history: number[], mode: string, frame: number, working: boolean, columns: number): Item[] {
+  const out: (Item | null)[] = [
+    walker(frame, working),
+    tile('MODE', mode, 1, mode !== 'DEFAULT'),
+    tile('DIR', clip(snap.dir, 24), 1),
+  ]
   if (snap.git) {
     const g = snap.git
     let v = clip(g.branch, 28)
     if (g.dirty) v += ` *${g.dirty}`
     if (g.ahead) v += ` ^${g.ahead}`
     if (g.behind) v += ` v${g.behind}`
-    out.push({ label: 'GIT', value: v, color: GREEN, priority: 1 })
+    out.push(tile('GIT', v, 1.5))
   }
   out.push(
-    { label: 'MODEL', value: clip(modelName(snap.model), 18), color: PINK, priority: 1 },
-    { label: 'EFFORT', value: effortValue(snap.effort), color: ORANGE, priority: 2 },
+    tile('MODEL', clip(modelName(snap.model), 18), 2),
+    tile('EFFORT', effortValue(snap.effort), 2),
+    contextItem(snap, columns),
+    sparkItem(history),
+    snap.limit5h !== null ? limitItem(snap.limit5h) : null,
   )
-  let session = `${snap.turns} TURNS`
-  if (total.input + total.output) session += ` ${compact(total.input + total.output)} TOK`
+  let session = `${snap.turns}T`
+  if (total.input + total.output) session += ` ${compact(total.input + total.output)}`
   if (snap.costUsd !== null) session += ` $${snap.costUsd.toFixed(2)}`
-  out.push({ label: 'SESSION', value: session, color: PEACH, priority: 3 })
-  return out
-}
-
-function drawTiles(c: Canvas, x0: number, all: Tile[]): void {
-  // Drop the least important tiles until the rest fit.
-  let list = all
-  const width = (l: Tile[]) => l.reduce((n, t) => n + tileWidth(t) + 1, 0)
-  while (list.length > 1 && x0 + width(list) > c.w) {
-    const worst = list.reduce((a, b) => (b.priority >= a.priority ? b : a))
-    list = list.filter(t => t !== worst)
-  }
-  let x = x0
-  for (const t of list) x = drawTile(c, x, t) + 1
-  // A dithered pixel trail fades out across the rest of the row.
-  const DITHER = '▓▒░'
-  for (let i = x; i < c.w; i++) {
-    const t = (i - x) / Math.max(1, c.w - x - 1)
-    c.put(i, 0, DITHER[Math.min(2, Math.floor(t * 3))]!, mix(DIM, BASE, t * 0.85), BASE)
-  }
-}
-
-// ── Row 2: gauges and the engine's hint ──────────────────────────────────
-
-const SPARKS = '▁▂▃▄▅▆▇█'
-
-function drawGauge(c: Canvas, x: number, width: number, pct: number, colorAt: (t: number) => number): number {
-  const filled = Math.round((Math.min(100, Math.max(0, pct)) / 100) * width)
-  for (let i = 0; i < width; i++) {
-    c.put(x + i, 1, '▆', i < filled ? colorAt(i / Math.max(1, width - 1)) : DIM, BASE)
-  }
-  return x + width
-}
-
-function drawRow2(c: Canvas, x0: number, snap: Snapshot, history: number[], hint: string): void {
-  const hintText = ascii(hint)
-  const ctxText = ` ${snap.ctxPercent ?? 0}% ${compact(snap.ctxTokens ?? 0)}/${compact(snap.ctxWindow)}`
-  const avail = c.w - x0 - (hintText ? hintText.length + 2 : 0)
-
-  // What fits, most important first: context gauge, sparkline, 5h gauge.
-  const spark = history.slice(-Math.min(HISTORY_LEN, 16))
-  const sparkW = spark.length ? 5 + spark.length + 1 : 0
-  const limitW = snap.limit5h !== null ? 4 + 8 + 6 : 0
-  const ctxFixed = 4 + ctxText.length + 2
-  let gauge = Math.min(48, Math.max(8, Math.floor(avail * 0.4)))
-  const showSpark = spark.length > 0 && ctxFixed + gauge + sparkW <= avail
-  const showLimit = limitW > 0 && ctxFixed + gauge + sparkW + limitW <= avail
-  gauge = Math.max(4, Math.min(gauge, avail - ctxFixed - (showSpark ? sparkW : 0) - (showLimit ? limitW : 0)))
-
-  let x = c.text(x0, 1, 'CTX ', YELLOW, BASE)
-  x = drawGauge(c, x, gauge, snap.ctxPercent ?? 0, heat)
-  x = c.text(x, 1, ctxText, (snap.ctxPercent ?? 0) >= 80 ? RED : CREAM, BASE) + 2
-
-  if (showSpark) {
-    x = c.text(x, 1, 'TOK ', PINK, BASE)
-    const max = Math.max(1, ...spark)
-    for (const v of spark) {
-      const level = Math.min(SPARKS.length - 1, Math.floor((v / max) * (SPARKS.length - 1)))
-      c.put(x++, 1, SPARKS[level]!, mix(LAVENDER, PINK, level / (SPARKS.length - 1)), BASE)
-    }
-    x += 2
-  }
-
-  if (showLimit && snap.limit5h !== null) {
-    x = c.text(x, 1, '5H ', LAVENDER, BASE)
-    x = drawGauge(c, x, 8, snap.limit5h, () => LAVENDER)
-    c.text(x, 1, ` ${Math.round(snap.limit5h)}%`, CREAM, BASE)
-  }
-
-  if (hintText) c.text(Math.max(x0, c.w - hintText.length - 1), 1, hintText, MUTED, BASE)
+  out.push(tile('SESSION', session, 3))
+  return out.filter((i): i is Item => i !== null)
 }
 
 // ── Formatting ───────────────────────────────────────────────────────────
@@ -261,6 +252,7 @@ function modelName(raw: string): string {
     .toUpperCase()
 }
 
+/** Paints the whole strip: one row, `columns` wide. */
 export function paint(
   snap: Snapshot,
   total: Tokens,
@@ -270,11 +262,36 @@ export function paint(
   working: boolean,
   columns: number,
 ): Canvas {
-  const c = new Canvas(Math.max(20, Math.min(512, columns)), 2)
-  drawSprite(c, 1, working ? frame : 0, working ? ORANGE : GREEN)
-  const x0 = SPRITE_W + 2
-  drawTiles(c, x0, tiles(snap, total))
-  drawRow2(c, x0, snap, history, hint)
+  const c = new Canvas(Math.max(20, Math.min(512, columns)))
+  const { mode, rest } = splitHint(hint)
+
+  // The engine's remaining hint is right-aligned; it competes for room like
+  // any item, outranking the session tile and the small gauges.
+  const hintItem: Item | null = rest
+    ? { width: rest.length + 1, priority: 2.5, draw: c => c.text(c.w - rest.length - 1, rest, C3) }
+    : null
+
+  // Drop the least important items (the rightmost of the lowest rank) until the row fits.
+  let list = items(snap, total, history, mode, frame, working, c.w)
+  if (hintItem) list.push(hintItem)
+  const width = (l: Item[]) => l.reduce((n, i) => n + i.width + 1, 1)
+  while (list.length > 1 && width(list) > c.w) {
+    const worst = list.reduce((a, b) => (b.priority >= a.priority ? b : a))
+    list = list.filter(i => i !== worst)
+  }
+
+  let x = 1
+  for (const item of list) {
+    if (item === hintItem) continue
+    item.draw(c, x)
+    x += item.width + 1
+  }
+
+  // A faint pixel trail fills the gap before the hint.
+  const shown = hintItem && list.includes(hintItem) ? hintItem : null
+  const end = shown ? c.w - shown.width - 1 : c.w - 1
+  for (let i = x; i < end; i++) c.put(i, '░', C1)
+  shown?.draw(c, 0)
   return c
 }
 

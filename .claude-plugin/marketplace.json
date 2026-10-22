@@ -23,7 +23,7 @@
     {
       "name": "pixelbar",
       "source": "./plugins/pixelbar",
-      "description": "A two-row, full-width pixel-art status strip under the prompt: folder, git branch, model, effort, context gauge, token sparkline and cost, with a little invader that walks while Claude works."
+      "description": "A single-row, full-width pixel-art status strip under the prompt: permission mode, folder, git branch, model, effort, context gauge, token sparkline and cost, with a little invader that walks while Claude works."
     }
   ]
 }
