@@ -98,8 +98,7 @@ export const SECTIONS = [
   { id: 'tok', line: 2, about: 'tokens-per-turn sparkline' },
   { id: '5h', line: 2, about: 'five-hour usage limit' },
   { id: '7d', line: 2, about: 'seven-day usage limit' },
-  { id: 'session', line: 2, about: 'turns, tokens, cost' },
-  { id: 'time', line: 2, about: 'session clock' },
+  { id: 'session', line: 2, about: 'session clock, turns, tokens, cost' },
   { id: 'last', line: 2, about: 'last turn duration' },
   { id: 'agents', line: 2, about: 'running subagents (when any)' },
   { id: 'tools', line: 2, about: 'tool calls this session' },
@@ -322,11 +321,10 @@ function claudeItems(
   if (snap.limit5h !== null) out.push(gaugeItem('5h', '5H', snap.limit5h, 6, 90, 4))
   if (snap.limit7d !== null) out.push(gaugeItem('7d', '7D', snap.limit7d, 6, 90, 5))
 
-  let session = `${snap.turns}T`
+  let session = snap.startedAt ? `${duration(now - snap.startedAt)} ${snap.turns}T` : `${snap.turns}T`
   if (total.input + total.output) session += ` ${compact(total.input + total.output)}`
   if (snap.costUsd !== null) session += ` $${snap.costUsd.toFixed(2)}`
   out.push(tile('session', 'SESSION', session, 3))
-  if (snap.startedAt) out.push(tile('time', 'TIME', duration(now - snap.startedAt), 3))
   if (counters.lastTurnMs !== null) out.push(tile('last', 'LAST', duration(counters.lastTurnMs), 4))
   if (snap.agents) out.push(tile('agents', 'AGENTS', `${snap.agents}`, 3, ACCENT))
   if (counters.tools) out.push(tile('tools', 'TOOLS', `${counters.tools}`, 5))

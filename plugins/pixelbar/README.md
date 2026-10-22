@@ -1,9 +1,9 @@
 # pixelbar
 
-A single-row, full-width, pixel-art status strip drawn **under** the Claude Code prompt. A little pixel walker on the left, then your project (folder and git), a thin divider, then Claude and the session (mode, model, effort, context, usage, cost, time).
+A single-row, full-width, pixel-art status strip drawn **under** the Claude Code prompt. A little pixel walker on the left, then your project (folder and git), a thin divider, then Claude and the session (mode, model, effort, context, usage, cost, session clock).
 
 ```
- ▛▜  ▐ DIR claude-plugins ▌ ▐ GIT feat/pixelbar *2 ^2 ▌ ▐ DIFF +124 -37 ▌ │ ▐ MODE DEFAULT ▌ ▐ MODEL OPUS 5.5 ▌ ▐ EFFORT ███░░ HIGH ▌ CTX ▆▆▆▆▆▆▆░░░ 42% 84K/200K 5H ▆▆░░ 37% ▐ SESSION 7T $1.23 ▌ ▐ TIME 1h12m ▌ ░░░░░░░░░░░░░░░░
+ ▛▜  ▐ DIR claude-plugins ▌ ▐ GIT feat/pixelbar *2 ^2 ▌ ▐ DIFF +124 -37 ▌ │ ▐ MODE DEFAULT ▌ ▐ MODEL OPUS 5.5 ▌ ▐ EFFORT ███░░ HIGH ▌ CTX ▆▆▆▆▆▆▆░░░ 42% 84K/200K 5H ▆▆░░ 37% ▐ SESSION 1h12m 7T $1.23 ▌ ░░░░░░░░░░░░░░░░░░░░░░░░░░░
 ```
 
 In your terminal it is drawn in color, in one of [12 palettes](#palettes) (Game Boy greens by default). Every section can be [switched on or off](#choosing-sections).
@@ -71,7 +71,7 @@ Everything sits on one row, left to right:
 | Walker | A 2-cell pixel character whose mood shows what's going on |
 | Project sections | `DIR`, `GIT`, `DIFF`, `STASH`; `COMMIT` hidden by default |
 | Divider `│` | Separates the two groups; flashes after long turns |
-| Claude and session sections | `MODE`, `MODEL`, `EFFORT`, `CTX`, `CACHE`, `TOK`, `5H`, `SESSION`, `TIME`; `7D`, `LAST`, `AGENTS`, `TOOLS`, `EDITS`, `CMP` hidden by default |
+| Claude and session sections | `MODE`, `MODEL`, `EFFORT`, `CTX`, `CACHE`, `TOK`, `5H`, `SESSION`; `7D`, `LAST`, `AGENTS`, `TOOLS`, `EDITS`, `CMP` hidden by default |
 | Hint | Claude Code's own hint text, at the right end; hidden by default |
 
 Most sections are pixel tiles, `▐ LABEL value ▌`, whose half-block edges give them a stepped outline. Gauges (`CTX`, `5H`, `7D`) are bars of `▆` cells. Any space left over is filled with a faint dithered trail `░░░`, so the strip always spans the full width.
@@ -175,13 +175,10 @@ A sparkline (`▁▂▃▄▅▆▇█`) of the tokens each of your last 12 turn
 
 | Shows | Means |
 |---|---|
+| `1h12m` | How long the session has been running |
 | `7T` | 7 prompts sent this session |
 | `210K` | Tokens used this session, summed over turns (input + output) |
 | `$1.23` | The session's cost so far, as `/cost` reports it |
-
-### `TIME`: session clock
-
-How long the session has been running, for example `1h12m`.
 
 ### `LAST`: last turn
 
@@ -220,7 +217,7 @@ Every section can be switched off, and back on, with `/pixelbar-sections`. It wo
 
 Section names:
 - **Project:** `dir`, `git`, `diff`, `commit`, `stash`.
-- **Claude and session:** `mode`, `model`, `effort`, `ctx`, `cache`, `tok`, `5h`, `7d`, `session`, `time`, `last`, `agents`, `tools`, `edits`, `compacts`, `hint`.
+- **Claude and session:** `mode`, `model`, `effort`, `ctx`, `cache`, `tok`, `5h`, `7d`, `session`, `last`, `agents`, `tools`, `edits`, `compacts`, `hint`.
 
 ## Narrow terminals
 
@@ -228,7 +225,7 @@ When the row doesn't fit, the least important sections drop out first, in this o
 
 1. `STASH`, `7D`, `TOOLS`, `CMP`
 2. `COMMIT` (if shown), `TOK`, `5H`, `CACHE`, `LAST`, `EDITS`
-3. `DIFF`, `SESSION`, `TIME`, `AGENTS`
+3. `DIFF`, `SESSION`, `AGENTS`
 4. The hint
 5. `MODEL`, `EFFORT`
 6. `GIT`
@@ -281,7 +278,7 @@ Each palette defines five shades (ground, tiles, labels, accent, values) plus th
 - **The mode is inferred from the hint line.** Mods have no direct way to read the permission mode, so the strip notices Claude Code's mode indicator through the hint text. The indicator is drawn by Claude Code to the left of the strip, not inside it. If the strip ever overlaps or cuts off the indicator, press shift+tab once to resync.
 - **No single-key shortcuts.** Mods can only attach to Claude Code's existing keybindings, so a key would mean taking one over. Palettes and sections are switched with slash commands instead.
 - **ASCII text only.** Each cell of the strip must hold one single-width character, so non-ASCII characters in folder names, branch names or commit subjects show as spaces.
-- **Some counts start when the plugin loads.** Token sums, the sparkline, `CACHE`, `TOOLS`, `EDITS`, `CMP` and `LAST` count from when the plugin started in this session. Cost, context, `TIME` and the usage limits come from Claude Code and are always complete.
+- **Some counts start when the plugin loads.** Token sums, the sparkline, `CACHE`, `TOOLS`, `EDITS`, `CMP` and `LAST` count from when the plugin started in this session. Cost, context, the session clock and the usage limits come from Claude Code and are always complete.
 
 ## How it works
 

@@ -94,7 +94,7 @@ describe('pixelbar strip', () => {
     expect(columns).toBe(319)
     expect(row.slice(1, 3)).toBe('▛▜')
     const order = ['DIR claude-plugins', 'GIT feat/pixelbar *2 ^2', 'DIFF +124 -37', 'STASH 1', '│', 'MODE DEFAULT',
-      'OPUS 5.5', '███░░ HIGH', 'CTX', '42% 84K/200K', '5H', '37%', 'SESSION 7T $1.23', 'TIME 1h12m']
+      'OPUS 5.5', '███░░ HIGH', 'CTX', '42% 84K/200K', '5H', '37%', 'SESSION 1h12m 7T $1.23']
     let at = 0
     for (const w of order) {
       const found = row.indexOf(w, at)
