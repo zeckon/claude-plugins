@@ -6,7 +6,7 @@ A single-row, full-width pixel-art status strip drawn **under** the Claude Code 
  ▛▜ ▐ MODE AUTO ▌ ▐ DIR claude-plugins ▌ ▐ GIT feat/pixelbar *2 ^2 ▌ ▐ MODEL OPUS 5.5 ▌ ▐ EFFORT ███░░ HIGH ▌ CTX ▆▆▆▆▆▆▆▆▆▆░░░░ 42% 84K/200K TOK ▂▅▃█▆ 5H ▆▆▆░░░ 37% ▐ SESSION 7T 210K $1.23 ▌ ░░░░ ? for shortcuts
 ```
 
-It is painted as a terminal `Raster` (every cell's character and color set directly) in one warm clay color ramp, dark to light, with a single alert tone for a context window past 80%.
+It is painted as a terminal `Raster` (every cell's character and color set directly) in the original Game Boy's olive-green shades, with a single red alert tone for a context window past 80%.
 
 | Part | Shows |
 |---|---|

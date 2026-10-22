@@ -14,16 +14,16 @@ const lastAtom = atom({ plugin: 'pixelbar', key: 'last' } as const, null)
 const totalAtom = atom({ plugin: 'pixelbar', key: 'total' } as const, ZERO)
 const historyAtom = atom({ plugin: 'pixelbar', key: 'history' } as const, [])
 
-// ── Palette: one warm clay ramp, dark to light, plus one alert tone ──────
+// ── Palette: the original Game Boy's olive greens, plus one alert tone ───
 
-const BASE = 0x14100e // the strip's ground
-const C1 = 0x241b17 // empty gauge cells, trail
-const C2 = 0x3d2c24 // tile ground
-const C3 = 0x6b4a3b // quiet text
-const C4 = 0xa96a50 // labels
-const ACCENT = 0xd97757 // the walker, the mode tile, filled gauges
-const LIGHT = 0xf2cdbb // values
-const ALERT = 0xff5a36 // context past 80%
+const BASE = 0x0f380f // the strip's ground (darkest Game Boy shade)
+const C1 = 0x1f4d1f // empty gauge cells, trail
+const C2 = 0x306230 // tile ground
+const C3 = 0x5e8720 // quiet text
+const C4 = 0x8bac0f // labels
+const ACCENT = 0x9bbc0f // the walker, filled gauges (lightest Game Boy shade)
+const LIGHT = 0xe0f8d0 // values
+const ALERT = 0xff5050 // context past 80%
 
 function mix(a: number, b: number, t: number): number {
   const ch = (s: number) => Math.round(((a >> s) & 0xff) * (1 - t) + ((b >> s) & 0xff) * t) << s
