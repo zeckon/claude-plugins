@@ -80,7 +80,7 @@ describe('pixelbar strip', () => {
     }
     expect(await strip()).toBe(0x0f380f) // Game Boy by default
 
-    expect((await $.command.run({ command: 'pixelbar-palette', args: '' })).text).toBe('pixelbar palette: Green phosphor (2/12)')
+    expect((await $.command.run({ command: 'pixelbar-palette', args: '' })).text).toBe('palette Green phosphor (2/12)')
     expect(await strip()).toBe(0x0b120c)
 
     expect((await $.command.run({ command: 'pixelbar-palette', args: 'Virtual Boy' })).text).toContain('Virtual Boy (11/12)')

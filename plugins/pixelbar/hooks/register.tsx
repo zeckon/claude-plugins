@@ -511,7 +511,7 @@ export const register: Register = on => {
     await update($, paletteAtom, () => next.id)
     await $.store.set('palette', next.id)
     const n = PALETTES.indexOf(next) + 1
-    return { text: `pixelbar palette: ${next.name} (${n}/${PALETTES.length})` }
+    return { text: `palette ${next.name} (${n}/${PALETTES.length})` }
   })
 
   on('session.measure', async ($, e, next) => {
