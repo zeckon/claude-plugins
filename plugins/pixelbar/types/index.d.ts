@@ -5,9 +5,16 @@ export type Git = {
   dirty: number
   ahead: number
   behind: number
+  /** Lines added / removed against HEAD (`git diff --shortstat HEAD`). */
+  added: number
+  removed: number
+  /** The last commit: epoch milliseconds and subject; null before the first commit. */
+  commitAt: number | null
+  commitSubject: string
+  stashes: number
 }
 
-/** Everything the band shows about the project and session, refreshed on events. */
+/** Everything the strip shows about the project and session, refreshed on events. */
 export type Snapshot = {
   /** Last folder of the session's working directory. */
   dir: string
@@ -19,8 +26,13 @@ export type Snapshot = {
   ctxPercent: number | null
   costUsd: number | null
   turns: number
-  /** Five-hour rate-limit window used, 0-100, when on a subscription. */
+  /** When the session began, epoch milliseconds. */
+  startedAt: number
+  /** Rate-limit windows used, 0-100, when on a subscription. */
   limit5h: number | null
+  limit7d: number | null
+  /** Subagents pending, running or waiting. */
+  agents: number
 }
 
 export type Tokens = {
@@ -28,6 +40,15 @@ export type Tokens = {
   output: number
   cacheRead: number
   cacheWrite: number
+}
+
+/** Counts the mod keeps itself, since the plugin loaded in this session. */
+export type Counters = {
+  tools: number
+  edits: number
+  compacts: number
+  /** Wall-clock length of the last main-loop turn, ms; null before the first. */
+  lastTurnMs: number | null
 }
 
 declare module 'claude-code' {
@@ -44,6 +65,9 @@ declare module 'claude-code' {
       history: number[]
       /** Id of the palette the strip paints in; also kept in `$.store` across sessions. */
       palette: string
+      counters: Counters
+      /** Ids of the sections switched off with /pixelbar-sections; also kept in `$.store`. */
+      hidden: string[]
     }
   }
 }

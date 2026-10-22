@@ -1,6 +1,6 @@
 {
   "name": "pixelbar",
-  "description": "A single-row, full-width pixel-art status strip under the prompt: permission mode, folder, git branch, model, effort, context gauge, token sparkline and cost, with a little invader that walks while Claude works.",
+  "description": "A full-width pixel-art status strip under the prompt: project and git on one line, Claude and session info on the other (mode, model, effort, context, usage, cost, time), beside an animated pixel character.",
   "version": "0.1.0",
   "author": {
     "name": "zeckon"
