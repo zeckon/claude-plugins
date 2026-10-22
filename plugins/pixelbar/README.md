@@ -11,7 +11,7 @@ It is painted as a terminal `Raster` (every cell's character and color set direc
 | Part | Shows |
 |---|---|
 | `▛▜` | A 2-cell pixel walker; it brightens and steps (`▛▜` / `▜▛`) while Claude works |
-| `MODE` | Permission mode (`DEFAULT`, `AUTO`, `PLAN`, `ACCEPT EDITS`, `BYPASS`, `DON'T ASK`); the tile lights up when not default |
+| `MODE` | `DEFAULT` in the default permission mode. In any other mode Claude Code draws its own mode pill (`⏵⏵ auto mode on`) at the left of this row; the strip makes room for it and shows no tile of its own |
 | `DIR` | The session's working folder |
 | `GIT` | Branch (or `@sha` when detached), `*N` changed files, `^N` ahead / `vN` behind upstream |
 | `MODEL` | The main model, as `/model` names it |
@@ -37,7 +37,7 @@ pixelbar is a **mod**: a plugin whose `hooks/hooks.json` names a TypeScript hook
 - on session start, after each main-loop turn, and when the engine re-measures usage
 - every 15 s, to pick up branch switches and edits made outside Claude
 
-Effort is read from each model request (`turn.step`); before the first one it falls back to the `effortLevel` setting, then `CLAUDE_EFFORT`. The permission mode is read off the engine's hint text (its mode pill, e.g. `auto mode on`), since the plugin API has no direct getter for it. Text from outside (paths, branch names, the hint) is reduced to printable ASCII, since a raster cell must hold one single-width character.
+Effort is read from each model request (`turn.step`); before the first one it falls back to the `effortLevel` setting, then `CLAUDE_EFFORT`. The engine's mode pill is drawn outside the strip's site, and the site's hint text then holds only `(shift+tab to cycle)`; the pill's phrase shows in the hint for a moment as the mode changes, so the strip remembers it to know how much room the pill needs. The strip also stops one column short of the terminal's edge, since writing the last column can wrap the row. Text from outside (paths, branch names, the hint) is reduced to printable ASCII, since a raster cell must hold one single-width character.
 
 ## Permissions
 

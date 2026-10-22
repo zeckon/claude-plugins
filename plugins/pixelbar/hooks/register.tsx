@@ -82,31 +82,41 @@ function toBase64(bytes: Uint8Array): string {
   return out
 }
 
-// ── Mode: read off the engine's hint line ────────────────────────────────
+// ── Mode: the engine's own mode pill ─────────────────────────────────────
+//
+// Outside the default mode the engine draws a pill (`⏵⏵ auto mode on`) at
+// the left of the hint row, outside this site; the site's `hint` is only the
+// rest (`(shift+tab to cycle)`). The pill's phrase reaches the hint for a
+// moment as the mode changes, so it is remembered from there. While a pill
+// shows, the strip leaves it room and draws no MODE tile of its own.
 
-const MODES: readonly (readonly [RegExp, string])[] = [
-  [/auto mode on/i, 'AUTO'],
-  [/plan mode on/i, 'PLAN'],
-  [/accept edits on/i, 'ACCEPT EDITS'],
-  [/bypass permissions on/i, 'BYPASS'],
-  [/don'?t ask (mode )?on/i, "DON'T ASK"],
-]
+const PILL = /(auto mode|plan mode|accept edits|bypass permissions|don'?t ask(?: mode)?|manual mode) on/i
+const CYCLE = /\(shift\+tab to cycle\)/i
 
-/** The permission mode the hint names, and the hint with that pill taken out. */
-export function splitHint(hint: string): { mode: string; rest: string } {
-  const text = ascii(hint)
-  for (const [re, mode] of MODES) {
-    if (re.test(text)) {
-      const rest = text
-        .replace(re, ' ')
-        .replace(/\(shift\+tab to cycle\)/i, ' ')
-        .replace(/\s+/g, ' ')
-        .replace(/^[\s|·-]+|[\s|·-]+$/g, '')
-      return { mode, rest }
-    }
-  }
-  return { mode: 'DEFAULT', rest: text }
+export type HintRead = {
+  /** The pill's phrase while one shows (`auto mode on`), else null: default mode. */
+  pill: string | null
+  /** A phrase this hint named, to remember for the next one. */
+  seen: string | null
+  /** The hint with the pill's words taken out. */
+  rest: string
 }
+
+export function readHint(hint: string, remembered: string | null): HintRead {
+  const text = ascii(hint)
+  const named = PILL.exec(text)?.[0].toLowerCase() ?? null
+  const seen = named?.startsWith('manual') ? null : named
+  const pill = CYCLE.test(text) ? (seen ?? remembered ?? 'mode on') : null
+  const rest = text
+    .replace(PILL, ' ')
+    .replace(CYCLE, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/^[\s|·-]+|[\s|·-]+$/g, '')
+  return { pill, seen: named ? seen : remembered, rest }
+}
+
+/** Columns the engine's pill takes at the row's left: `⏵⏵ ` and a gap. */
+export const pillWidth = (pill: string | null) => (pill ? pill.length + 4 : 0)
 
 // ── Items: what the row is made of, laid out left to right ───────────────
 
@@ -201,10 +211,10 @@ function effortValue(effort: string | null): string {
   return level < 0 ? word : `${'█'.repeat(level + 1)}${'░'.repeat(EFFORTS.length - level - 1)} ${word}`
 }
 
-function items(snap: Snapshot, total: Tokens, history: number[], mode: string, frame: number, working: boolean, columns: number): Item[] {
+function items(snap: Snapshot, total: Tokens, history: number[], pill: string | null, frame: number, working: boolean, columns: number): Item[] {
   const out: (Item | null)[] = [
     walker(frame, working),
-    tile('MODE', mode, 1, mode !== 'DEFAULT'),
+    pill ? null : tile('MODE', 'DEFAULT', 1),
     tile('DIR', clip(snap.dir, 24), 1),
   ]
   if (snap.git) {
@@ -252,18 +262,20 @@ function modelName(raw: string): string {
     .toUpperCase()
 }
 
-/** Paints the whole strip: one row, `columns` wide. */
+/**
+ * Paints the whole strip: one row, filling what the pill leaves of `columns`,
+ * less the terminal's last column (writing there can wrap the row).
+ */
 export function paint(
   snap: Snapshot,
   total: Tokens,
   history: number[],
-  hint: string,
+  { pill, rest }: HintRead,
   frame: number,
   working: boolean,
   columns: number,
 ): Canvas {
-  const c = new Canvas(Math.max(20, Math.min(512, columns)))
-  const { mode, rest } = splitHint(hint)
+  const c = new Canvas(Math.max(20, Math.min(512, columns - pillWidth(pill) - 1)))
 
   // The engine's remaining hint is right-aligned; it competes for room like
   // any item, outranking the session tile and the small gauges.
@@ -272,7 +284,7 @@ export function paint(
     : null
 
   // Drop the least important items (the rightmost of the lowest rank) until the row fits.
-  let list = items(snap, total, history, mode, frame, working, c.w)
+  let list = items(snap, total, history, pill, frame, working, c.w)
   if (hintItem) list.push(hintItem)
   const width = (l: Item[]) => l.reduce((n, i) => n + i.width + 1, 1)
   while (list.length > 1 && width(list) > c.w) {
@@ -365,6 +377,7 @@ export const register: Register = on => {
   let frame = 0
   let anim: Timer | null = null
   let poll: Timer | null = null
+  let pillPhrase: string | null = null
 
   on('session.start', async ($, e, next) => {
     const started = await next(e)
@@ -440,7 +453,8 @@ export const register: Register = on => {
     const total = (await read($, totalAtom)) ?? ZERO
     const history = (await read($, historyAtom)) ?? []
 
-    const hint = e.props.tail ? `${e.props.hint} ${e.props.tail}` : e.props.hint
+    const hint = readHint(e.props.tail ? `${e.props.hint} ${e.props.tail}` : e.props.hint, pillPhrase)
+    pillPhrase = hint.seen
     const canvas = paint(snap, total, history, hint, frame, e.props.isWorking, e.viewport.columns)
     const { Raster } = $.ui.resolve(e)
 

@@ -56,47 +56,63 @@ function decode(raster: { props: Record<string, unknown> } | undefined): string[
   return out
 }
 
+type Mounted = { props: { columns: number; rows: number } }
+
+// The hints below are what the engine handed the site in a real session.
 describe('pixelbar strip', () => {
-  test('paints one full-width row of project and session facts', async ($, on) => {
+  test('default mode: a MODE tile, the full width less the last column', async ($, on) => {
     fakeSession(on)
     await $.session.start({ cwd: '/Users/zeckon/workspace/claude-plugins', surface: 'terminal', isInteractive: true })
 
-    const ui = await $.ui.mount(HINT(200, '\u23F5\u23F5 auto mode on (shift+tab to cycle) \u00B7 ? for shortcuts'))
-    const raster = (await ui.find({ type: 'Raster' })) as never as { props: { columns: number; rows: number } }
+    const ui = await $.ui.mount(HINT(240, '? for shortcuts'))
+    const raster = (await ui.find({ type: 'Raster' })) as never as Mounted
     const [row] = decode(raster as never)
     console.log(`\n${row}`)
 
     expect(raster.props.rows).toBe(1)
-    expect(raster.props.columns).toBe(200)
-    for (const words of ['\u259B\u259C', 'MODE AUTO', 'claude-plugins', 'feat/pixelbar *2 ^2', 'OPUS 5.5', '\u2588\u2588\u2588\u2591\u2591 HIGH', 'CTX', '42% 84K/200K', '5H', '37%', '7T $1.23', '? for shortcuts']) {
+    expect(raster.props.columns).toBe(239)
+    for (const words of ['\u259B\u259C', 'MODE DEFAULT', 'claude-plugins', 'feat/pixelbar *2 ^2', 'OPUS 5.5', '\u2588\u2588\u2588\u2591\u2591 HIGH', 'CTX', '42% 84K/200K', '5H', '37%', '7T $1.23', '? for shortcuts']) {
       expect(row).toContain(words)
     }
-    expect(row).not.toContain('shift+tab')
     await ui.unmount()
   })
 
-  test('reads plan mode and the default mode off the hint', async ($, on) => {
+  test('another mode: leaves room for the engine pill and draws no MODE tile', async ($, on) => {
     fakeSession(on)
     await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
 
-    const plan = await $.ui.mount(HINT(200, '\u23F8 plan mode on (shift+tab to cycle)'))
-    expect(decode((await plan.find({ type: 'Raster' })) as never)[0]).toContain('MODE PLAN')
-    await plan.unmount()
+    // The phrase shows in the hint for a moment as the mode changes...
+    const changing = await $.ui.mount(HINT(200, 'auto mode on (shift+tab to cycle)'))
+    const first = (await changing.find({ type: 'Raster' })) as never as Mounted
+    expect(first.props.columns).toBe(200 - 'auto mode on'.length - 4 - 1)
+    await changing.unmount()
 
-    const plain = await $.ui.mount(HINT(200))
-    expect(decode((await plain.find({ type: 'Raster' })) as never)[0]).toContain('MODE DEFAULT')
-    await plain.unmount()
+    // ...then the hint keeps only the rest, and the width is remembered.
+    const settled = await $.ui.mount(HINT(200, '(shift+tab to cycle)'))
+    const raster = (await settled.find({ type: 'Raster' })) as never as Mounted
+    const [row] = decode(raster as never)
+    console.log(`\n${' '.repeat(16)}${row}`)
+    expect(raster.props.columns).toBe(183)
+    expect(row).not.toContain('MODE DEFAULT')
+    expect(row).not.toContain('shift+tab')
+    await settled.unmount()
+
+    // Back to default: no pill, so the tile and the width return.
+    const back = await $.ui.mount(HINT(200, 'manual mode on \u00B7 ? for shortcuts'))
+    const [backRow] = decode((await back.find({ type: 'Raster' })) as never)
+    expect(backRow).toContain('MODE DEFAULT')
+    expect(backRow).not.toContain('manual')
+    await back.unmount()
   })
 
-  test('fits a narrow terminal, keeping mode, folder and context', async ($, on) => {
+  test('fits a narrow terminal, keeping folder and context', async ($, on) => {
     fakeSession(on)
     await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
 
-    const ui = await $.ui.mount(HINT(90, 'esc to interrupt'))
+    const ui = await $.ui.mount(HINT(90, '(shift+tab to cycle) \u00B7 esc to interrupt'))
     const [row] = decode((await ui.find({ type: 'Raster' })) as never)
     console.log(`\n${row}`)
 
-    expect(row).toContain('MODE DEFAULT')
     expect(row).toContain('claude-plugins')
     expect(row).toContain('42%')
     expect(row).not.toContain('SESSION')
