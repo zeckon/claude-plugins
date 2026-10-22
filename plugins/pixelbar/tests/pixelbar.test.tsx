@@ -2,13 +2,13 @@ import { describe, expect, mock, test } from 'claude-code/testing'
 
 const NOW = 1_760_000_000_000
 
-const HINT = (columns: number, hint = '? for shortcuts') =>
+const HINT = (columns: number, hint = '? for shortcuts', isWorking = false) =>
   ({
     plugin: 'pixelbar',
     component: 'PromptHint',
     surface: 'terminal',
     viewport: { columns, rows: 40 },
-    props: { isDraft: false, isWorking: false, hint },
+    props: { isDraft: false, isWorking, hint },
   }) as const
 
 const GIT: Record<string, string> = {
@@ -62,8 +62,13 @@ function fakeSession(on: On, ctxPercent = 42) {
 
 type Painted = { rows: string[]; columns: number; cell: (x: number, y: number) => { ch: string; fg: number; bg: number } }
 
-async function paintStrip($: Parameters<Parameters<typeof test>[1]>[0], columns: number, hint?: string): Promise<Painted> {
-  const ui = await $.ui.mount(HINT(columns, hint))
+async function paintStrip(
+  $: Parameters<Parameters<typeof test>[1]>[0],
+  columns: number,
+  hint?: string,
+  isWorking = false,
+): Promise<Painted> {
+  const ui = await $.ui.mount(HINT(columns, hint, isWorking))
   const raster = (await ui.find({ type: 'Raster' })) as never as { props: { columns: number; rows: number; cells: string } }
   await ui.unmount()
   const { columns: w, rows: h, cells } = raster.props
@@ -82,7 +87,7 @@ async function paintStrip($: Parameters<Parameters<typeof test>[1]>[0], columns:
 }
 
 describe('pixelbar strip', () => {
-  test('one row: walker, project sections, a divider, Claude and session sections, hint', async ($, on) => {
+  test('one row over the pill line: walker, mode, Claude and session sections; project at the right end', async ($, on) => {
     fakeSession(on)
     await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
 
@@ -91,35 +96,52 @@ describe('pixelbar strip', () => {
     console.log(`\n${row}`)
 
     expect(rows.length).toBe(1)
-    expect(columns).toBe(319)
+    expect(columns).toBe(316)
     expect(row.slice(1, 3)).toBe('▛▜')
-    const order = ['DIR claude-plugins', 'GIT feat/pixelbar *2 ^2', 'DIFF +124 -37', 'STASH 1', '│', 'MODE DEFAULT',
-      'OPUS 5.5', '███░░ HIGH', 'CTX', '42% 84K/200K', '5H', '37%', 'SESSION 1h12m 7T $1.23']
+    const order = ['MODE DEFAULT', 'OPUS 5.5', '▁▂▃▄▅', 'CTX', '42% 84K/200K', '5H', '37%', 'SESSION 1h12m 7T $1.23',
+      '░░░', 'DIR claude-plugins', 'GIT feat/pixelbar *2 ^2', 'DIFF +124 -37', 'STASH 1']
     let at = 0
     for (const w of order) {
       const found = row.indexOf(w, at)
       expect(found).toBeGreaterThan(-1)
       at = found
     }
+    expect(row.trimEnd().endsWith('STASH 1 ▌')).toBe(true)
+    expect(row.trimEnd().length).toBe(columns) // packed against the right edge
+    expect(row).not.toContain('│') // no divider
     // Hidden until switched on.
     for (const w of ['COMMIT', '7D', '? for shortcuts']) expect(row).not.toContain(w)
   })
 
-  test('another mode: leaves room for the engine pill and draws no MODE tile', async ($, on) => {
+  test('the MODE tile follows shift+tab through the modes', async ($, on) => {
     fakeSession(on)
     await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
     await $.command.run({ command: 'pixelbar-sections', args: 'on hint' })
+    const modeAfter = async (...hints: string[]) => {
+      let painted: Painted | null = null
+      for (const h of hints) painted = await paintStrip($, 200, h, h === 'esc to interrupt')
+      expect(painted!.columns).toBe(196)
+      expect(painted!.rows[0]).not.toContain('shift+tab')
+      return /MODE ([A-Z' ]+?) ▌/.exec(painted!.rows[0]!)?.[1]
+    }
 
-    const first = await paintStrip($, 200, 'auto mode on (shift+tab to cycle)')
-    expect(first.columns).toBe(200 - 'auto mode on'.length - 4 - 1)
+    expect(await modeAfter('? for shortcuts')).toBe('DEFAULT')
+    // Each step's first hint names the mode it leaves.
+    expect(await modeAfter('manual mode on · ? for shortcuts', '(shift+tab to cycle)')).toBe('ACCEPT EDITS')
+    expect(await modeAfter('accept edits on (shift+tab to cycle)', '(shift+tab to cycle)')).toBe('PLAN')
+    expect(await modeAfter('plan mode on (shift+tab to cycle)', '(shift+tab to cycle)')).toBe('AUTO')
+    expect(await modeAfter('esc to interrupt')).toBe('AUTO') // a working hint keeps it
+    expect(await modeAfter('auto mode on (shift+tab to cycle)', '? for shortcuts')).toBe('DEFAULT')
+  })
 
-    const settled = await paintStrip($, 200, '(shift+tab to cycle)')
-    expect(settled.columns).toBe(183)
-    expect(settled.rows[0]).not.toContain('MODE DEFAULT')
-    expect(settled.rows[0]).not.toContain('shift+tab')
+  test('a pill shown with no mode known yet reads MODE ON, until a prompt names the mode', async ($, on) => {
+    fakeSession(on)
+    on('classic.UserPromptSubmit', () => ({}))
+    await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
 
-    const back = await paintStrip($, 200, 'manual mode on · ? for shortcuts')
-    expect(back.rows[0]).toContain('MODE DEFAULT')
+    expect((await paintStrip($, 200, '(shift+tab to cycle)')).rows[0]).toContain('MODE ON')
+    await $.classic.UserPromptSubmit({ prompt: 'hi', permission_mode: 'bypassPermissions' })
+    expect((await paintStrip($, 200, '(shift+tab to cycle)')).rows[0]).toContain('MODE BYPASS')
   })
 
   test('fits a narrow terminal, keeping folder, mode and context', async ($, on) => {
@@ -159,7 +181,7 @@ describe('pixelbar strip', () => {
     fakeSession(on)
     await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
     const run = (args: string) => $.command.run({ command: 'pixelbar-sections', args })
-    const row = async () => (await paintStrip($, 320)).rows[0]!
+    const row = async () => (await paintStrip($, 320)).rows.join('\n')
 
     const listed = (await run('')).text ?? ''
     expect(listed).toContain('Project:')
