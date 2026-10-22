@@ -59,7 +59,7 @@ export function findPalette(query: string): Palette | undefined {
 // The colors drawing reads; `usePalette` sets them before each paint.
 let BASE = 0 // the strip's ground
 let C1 = 0 // empty gauge cells, trail
-let C2 = 0 // tile ground, separator
+let C2 = 0 // tile ground
 let C3 = 0 // quiet text
 let C4 = 0 // labels
 let ACCENT = 0 // the character at work, filled gauges
@@ -90,7 +90,7 @@ export const SECTIONS = [
   { id: 'diff', line: 1, about: 'lines added/removed vs last commit' },
   { id: 'commit', line: 1, about: 'last commit age and subject' },
   { id: 'stash', line: 1, about: 'stash count (when any)' },
-  { id: 'mode', line: 2, about: 'MODE DEFAULT tile' },
+  { id: 'mode', line: 2, about: 'permission mode tile' },
   { id: 'model', line: 2, about: 'model' },
   { id: 'effort', line: 2, about: 'reasoning effort' },
   { id: 'ctx', line: 2, about: 'context window gauge' },
@@ -172,7 +172,7 @@ function toBase64(bytes: Uint8Array): string {
 // It lives in a 3-cell slot: the third cell holds its sparkles and z's.
 
 export type Mood = 'idle' | 'walk' | 'happy' | 'panic' | 'sleep'
-export type Pose = { mood: Mood; frame: number; isFlashing: boolean }
+export type Pose = { mood: Mood; frame: number }
 
 const FRAMES: Record<Mood, readonly string[]> = {
   idle: ['▛▜'],
@@ -202,17 +202,7 @@ function drawWalker(c: Canvas, pose: Pose): void {
 
 // ── Items: what the row is made of, laid out left to right ───────────────
 
-type Item = { id: SectionId | 'divider'; width: number; priority: number; draw: (c: Canvas, x: number, y: number) => void }
-
-/** The thin rule between the project and Claude groups; it flashes after a long turn. */
-function divider(pose: Pose): Item {
-  return {
-    id: 'divider',
-    width: 1,
-    priority: 1,
-    draw: (c, x, y) => c.put(x, y, '│', pose.isFlashing && pose.frame % 2 === 0 ? ACCENT : C3),
-  }
-}
+type Item = { id: SectionId; width: number; priority: number; draw: (c: Canvas, x: number, y: number) => void }
 
 /** `▐ LABEL value ▌`: half-block edges give the tile a stepped pixel outline. */
 function tile(id: SectionId, label: string, value: string, priority: number, valueColor?: number): Item {
@@ -275,11 +265,28 @@ function sparkItem(history: number[]): Item | null {
 
 const EFFORTS = ['low', 'medium', 'high', 'xhigh', 'max']
 
-function effortValue(effort: string | null): string {
-  if (effort === null) return 'AUTO'
-  const level = EFFORTS.indexOf(effort)
-  const word = effort.toUpperCase()
-  return level < 0 ? word : `${'█'.repeat(level + 1)}${'░'.repeat(EFFORTS.length - level - 1)} ${word}`
+const EFFORT_BARS = '▁▂▃▄▅'
+
+/**
+ * Effort as a tile of rising bars, one per level, lit up to the current one:
+ * `▐ ▁▂▃▄▅ ▌` with three lit is `high`. An effort the bars don't know (or
+ * none yet) shows as its word.
+ */
+function effortItem(effort: string | null): Item {
+  const level = effort === null ? -1 : EFFORTS.indexOf(effort)
+  if (level < 0) return tile('effort', 'EFFORT', effort === null ? 'AUTO' : clip(effort, 10).toUpperCase(), 2)
+  return {
+    id: 'effort',
+    width: EFFORT_BARS.length + 4,
+    priority: 2,
+    draw: (c, x, y) => {
+      c.put(x++, y, '▐', C2)
+      c.put(x++, y, ' ', C2, C2)
+      for (let i = 0; i < EFFORT_BARS.length; i++) c.put(x++, y, EFFORT_BARS[i]!, i <= level ? LIGHT : C3, C2)
+      c.put(x++, y, ' ', C2, C2)
+      c.put(x, y, '▌', C2)
+    },
+  }
 }
 
 function projectItems(snap: Snapshot, now: number): Item[] {
@@ -304,15 +311,14 @@ function claudeItems(
   total: Tokens,
   history: number[],
   counters: Counters,
-  pill: string | null,
-  columns: number,
+  mode: string,
   now: number,
 ): Item[] {
   const out: (Item | null)[] = [
-    pill ? null : tile('mode', 'MODE', 'DEFAULT', 1),
+    tile('mode', 'MODE', modeLabel(mode), 1),
     tile('model', 'MODEL', clip(modelName(snap.model), 18), 2),
-    tile('effort', 'EFFORT', effortValue(snap.effort), 2),
-    gaugeItem('ctx', 'CTX', snap.ctxPercent ?? 0, Math.min(20, Math.max(6, Math.floor(columns * 0.08))), 80, 1,
+    effortItem(snap.effort),
+    gaugeItem('ctx', 'CTX', snap.ctxPercent ?? 0, 6, 80, 1,
       ` ${compact(snap.ctxTokens ?? 0)}/${compact(snap.ctxWindow)}`),
   ]
   const cacheBase = total.input + total.cacheRead + total.cacheWrite
@@ -334,64 +340,113 @@ function claudeItems(
 }
 
 /**
- * Lays out one line from `x0`: drops the least important items (the rightmost
- * of the lowest rank) until the rest and `right` fit, draws them, puts `right`
- * at the right edge, and fills the gap with a faint pixel trail.
+ * Lays out one line: `left` from `x0`, `right` packed against the right edge.
+ * Drops the least important items (the rightmost of the lowest rank, across
+ * both groups) until the rest fit, and fills the gap with a faint pixel trail.
  */
-function drawLine(c: Canvas, y: number, x0: number, all: Item[], right: Item | null): void {
-  let list = right ? [...all, right] : all
+function drawLine(c: Canvas, y: number, x0: number, left: Item[], right: Item[]): void {
+  let list = [...left, ...right]
   const width = (l: Item[]) => l.reduce((n, i) => n + i.width + 1, x0)
   while (list.length > 1 && width(list) > c.w) {
     const worst = list.reduce((a, b) => (b.priority >= a.priority ? b : a))
     list = list.filter(i => i !== worst)
   }
   let x = x0
-  for (const item of list) {
-    if (item === right) continue
+  for (const item of left.filter(i => list.includes(i))) {
     item.draw(c, x, y)
     x += item.width + 1
   }
-  const shown = right && list.includes(right) ? right : null
-  const end = shown ? c.w - shown.width - 1 : c.w
-  for (let i = x; i < end; i++) c.put(i, y, '░', C1)
-  shown?.draw(c, c.w - shown.width, y)
+  const shownRight = right.filter(i => list.includes(i))
+  let rx = c.w - shownRight.reduce((n, i) => n + i.width + 1, 0) + 1
+  for (let i = x; i < rx - 1; i++) c.put(i, y, '░', C1)
+  for (const item of shownRight) {
+    item.draw(c, rx, y)
+    rx += item.width + 1
+  }
 }
 
-// ── Mode: the engine's own mode pill ─────────────────────────────────────
+// ── Mode: which permission mode the MODE tile names ───────────────────────
 //
 // Outside the default mode the engine draws a pill (`⏵⏵ auto mode on`) at
-// the left of the hint row, outside this site; the site's `hint` is only the
-// rest (`(shift+tab to cycle)`). The pill's phrase reaches the hint for a
-// moment as the mode changes, so it is remembered from there. While a pill
-// shows, the strip leaves it room and draws no MODE tile of its own.
+// the left of the hint row, outside this site, on the site's first row; the
+// site's `hint` is then only the rest (`(shift+tab to cycle)`). The strip
+// paints over that pill (see `ui.render` below) and names the mode in its own
+// MODE tile instead. Mods can't read the mode directly, so it is gathered
+// from the pill's phrase, which reaches the hint for a moment as the mode
+// changes, and from the `permission_mode` of each classic prompt hook.
 
-const PILL = /(auto mode|plan mode|accept edits|bypass permissions|don'?t ask(?: mode)?|manual mode) on/i
+const PHRASES: readonly [RegExp, string][] = [
+  [/auto mode on/i, 'auto'],
+  [/plan mode on/i, 'plan'],
+  [/accept edits on/i, 'acceptEdits'],
+  [/bypass permissions on/i, 'bypassPermissions'],
+  [/don'?t ask(?: mode)? on/i, 'dontAsk'],
+  [/manual mode on/i, 'default'],
+]
 const CYCLE = /\(shift\+tab to cycle\)/i
 
+const MODE_LABELS: Record<string, string> = {
+  default: 'DEFAULT',
+  auto: 'AUTO',
+  plan: 'PLAN',
+  acceptEdits: 'ACCEPT EDITS',
+  bypassPermissions: 'BYPASS',
+  dontAsk: "DON'T ASK",
+  unknown: 'ON',
+}
+
+export function modeLabel(mode: string): string {
+  return MODE_LABELS[mode] ?? clip(mode, 14).toUpperCase()
+}
+
 export type HintRead = {
-  /** The pill's phrase while one shows (`auto mode on`), else null: default mode. */
-  pill: string | null
-  /** A phrase this hint named, to remember for the next one. */
-  seen: string | null
-  /** The hint with the pill's words taken out. */
+  /** The mode this hint's pill phrase names (`auto`), else null. */
+  mode: string | null
+  /** True when the hint carries the pill's `(shift+tab to cycle)`: some mode other than the default is on. */
+  hasPill: boolean
+  /** The hint with the pill's words and the cycle reminder taken out. */
   rest: string
 }
 
-export function readHint(hint: string, remembered: string | null): HintRead {
-  const text = ascii(hint)
-  const named = PILL.exec(text)?.[0].toLowerCase() ?? null
-  const seen = named?.startsWith('manual') ? null : named
-  const pill = CYCLE.test(text) ? (seen ?? remembered ?? 'mode on') : null
+export function readHint(hint: string): HintRead {
+  let text = ascii(hint)
+  let mode: string | null = null
+  for (const [re, id] of PHRASES) {
+    if (re.test(text)) {
+      mode ??= id
+      text = text.replace(re, ' ')
+    }
+  }
   const rest = text
-    .replace(PILL, ' ')
     .replace(CYCLE, ' ')
     .replace(/\s+/g, ' ')
     .replace(/^[\s|·-]+|[\s|·-]+$/g, '')
-  return { pill, seen: named ? seen : remembered, rest }
+  return { mode, hasPill: CYCLE.test(text), rest }
 }
 
-/** Columns the engine's pill takes at the row's left: `⏵⏵ ` and a gap. */
-export const pillWidth = (pill: string | null) => (pill ? pill.length + 4 : 0)
+/**
+ * Columns from the hint row's left margin to where this site starts: the
+ * engine's pill and its ` · ` (`⏸ plan mode on · `), by mode. Measured on the
+ * terminal, build 2.1.308, where every mode draws a pill (the default's is
+ * `⏸ manual mode on`). An unknown mode is taken to be auto's width.
+ */
+const PILL_OFFSETS: Record<string, number> = {
+  default: 19,
+  acceptEdits: 21,
+  plan: 17,
+  auto: 18,
+  dontAsk: 18,
+  bypassPermissions: 27,
+}
+
+export const pillOffset = (mode: string) => PILL_OFFSETS[mode] ?? PILL_OFFSETS.auto!
+
+/**
+ * Columns of the hint row the strip spans: the row less the engine's
+ * two-column margins at each side (measured on the terminal; the right one
+ * also keeps the strip off the last column, where writing can wrap the row).
+ */
+export const stripWidth = (columns: number) => Math.max(30, Math.min(512, columns - 4))
 
 // ── Formatting ───────────────────────────────────────────────────────────
 
@@ -435,6 +490,8 @@ export type PaintInput = {
   history: number[]
   counters: Counters
   hint: HintRead
+  /** The permission mode (`default`, `auto`, ...) the MODE tile names. */
+  mode: string
   pose: Pose
   columns: number
   now: number
@@ -443,14 +500,13 @@ export type PaintInput = {
 }
 
 /**
- * Paints the strip, one row: the walker, the project sections, a divider,
- * the Claude and session sections, and the engine's hint at the right end.
- * It fills what the engine's pill leaves of `columns`, less the terminal's
- * last column (writing there can wrap the row).
+ * Paints the strip, one row over the engine's pill line: the walker, the
+ * mode and the Claude and session sections from the left; the engine's hint
+ * and the project sections packed against the right end.
  */
 export function paint(p: PaintInput): Canvas {
   usePalette(p.palette ?? PALETTES[0]!)
-  const c = new Canvas(Math.max(30, Math.min(512, p.columns - pillWidth(p.hint.pill) - 1)))
+  const c = new Canvas(stripWidth(p.columns))
   const hidden = new Set(p.hidden ?? DEFAULT_HIDDEN)
   const visible = (items: Item[]) => items.filter(i => !hidden.has(i.id))
 
@@ -463,9 +519,8 @@ export function paint(p: PaintInput): Canvas {
       : null
 
   const project = visible(projectItems(p.snap, p.now))
-  const claude = visible(claudeItems(p.snap, p.total, p.history, p.counters, p.hint.pill, c.w, p.now))
-  const items = project.length && claude.length ? [...project, divider(p.pose), ...claude] : [...project, ...claude]
-  drawLine(c, 0, CONTENT_X, items, hintItem)
+  const claude = visible(claudeItems(p.snap, p.total, p.history, p.counters, p.mode, p.now))
+  drawLine(c, 0, CONTENT_X, claude, hintItem ? [hintItem, ...project] : project)
   return c
 }
 
@@ -565,12 +620,10 @@ async function safeRefresh($: EngineInterface): Promise<void> {
 
 const SLEEP_AFTER_MS = 5 * 60_000
 const HAPPY_MS = 2_500
-const FLASH_AFTER_TURN_MS = 60_000
 
 const mood = {
   isWorking: false,
   happyUntil: 0,
-  flashUntil: 0,
   lastActive: 0,
   frame: 0,
   ticker: null as Timer | null,
@@ -590,7 +643,7 @@ function animate($: EngineInterface, ms: number): void {
 async function stopWhenStill($: EngineInterface): Promise<void> {
   const now = await $.clock.now()
   const isAsleep = now - mood.lastActive >= SLEEP_AFTER_MS
-  if (!mood.isWorking && now > mood.happyUntil && now > mood.flashUntil && !isAsleep) {
+  if (!mood.isWorking && now > mood.happyUntil && !isAsleep) {
     mood.ticker?.cancel()
     mood.ticker = null
   }
@@ -614,16 +667,61 @@ function poseAt(now: number, snap: Snapshot): Pose {
         : mood.isWorking
           ? 'walk'
           : 'idle'
-  return { mood: m, frame: mood.frame, isFlashing: now < mood.flashUntil }
+  return { mood: m, frame: mood.frame }
 }
 
 // ── Hooks ────────────────────────────────────────────────────────────────
 
 const EDIT_TOOLS = new Set(['Edit', 'Write', 'MultiEdit', 'NotebookEdit'])
 
+/**
+ * The permission mode the MODE tile names. Nothing tells a mod the mode a
+ * session starts in, so it starts as a guess, the settings' `defaultMode`,
+ * and is corrected by the hint (see `nextMode`) and by each prompt.
+ */
+let mode = 'default'
+let leaving: string | null = null
+
+function noteMode($: EngineInterface, seen: string | null | undefined): void {
+  if (seen && seen !== mode) {
+    mode = seen
+    leaving = null
+    $.ui.invalidate('ui.render')
+  }
+}
+
+async function guessMode($: EngineInterface): Promise<void> {
+  const perms = (await $.settings.read({ key: 'permissions' }).catch(() => undefined)) as { defaultMode?: unknown } | undefined
+  mode = typeof perms?.defaultMode === 'string' ? perms.defaultMode : 'default'
+  leaving = null
+}
+
+/** The order shift+tab steps through the modes. */
+const CYCLE_ORDER = ['default', 'acceptEdits', 'plan', 'auto', 'bypassPermissions']
+
+export type ModeState = {
+  mode: string
+  /** The mode a shift+tab is leaving, between its two hints. */
+  leaving: string | null
+}
+
+/**
+ * The mode after this hint (measured on the terminal, build 2.1.308). A
+ * shift+tab hands the hint the phrase of the mode it LEAVES for a moment
+ * (`plan mode on (shift+tab to cycle)` on the way to auto), then only the
+ * cycle reminder, which stays while any mode but the default is on. The idle
+ * hint of the default mode has neither (`? for shortcuts`). While Claude
+ * works or a draft is typed the hint says other things, so the mode is kept.
+ */
+export function nextMode(s: ModeState, hint: HintRead, isBusy: boolean): ModeState {
+  if (hint.mode) return { mode: s.mode, leaving: hint.mode }
+  if (!hint.hasPill) return isBusy ? s : { mode: 'default', leaving: null }
+  if (s.leaving) return { mode: CYCLE_ORDER[CYCLE_ORDER.indexOf(s.leaving) + 1] ?? 'unknown', leaving: null }
+  return { mode: s.mode === 'default' ? 'unknown' : s.mode, leaving: null }
+}
+
 export const register: Register = on => {
   let poll: Timer | null = null
-  let pillPhrase: string | null = null
 
   on('session.start', async ($, e, next) => {
     const started = await next(e)
@@ -641,6 +739,7 @@ export const register: Register = on => {
     })
     const saved = await $.store.get('palette')
     if (typeof saved === 'string' && findPalette(saved)) await update($, paletteAtom, () => saved)
+    await guessMode($)
     const hidden = await $.store.get('hidden')
     if (Array.isArray(hidden)) await update($, hiddenAtom, () => hidden.filter((h): h is string => typeof h === 'string'))
 
@@ -651,6 +750,12 @@ export const register: Register = on => {
     poll?.cancel()
     poll = $.clock.every(15_000, () => void safeRefresh($))
     return started
+  })
+
+  // Each prompt's classic hook input names the mode it was sent in.
+  on('classic.UserPromptSubmit', async ($, e, next) => {
+    noteMode($, e.permission_mode)
+    return next(e)
   })
 
   on('prompt.submit', async ($, e, next) => {
@@ -687,7 +792,6 @@ export const register: Register = on => {
       mood.isWorking = false
       mood.lastActive = now
       mood.happyUntil = e.isAborted ? 0 : now + HAPPY_MS
-      if (e.durationMs >= FLASH_AFTER_TURN_MS) mood.flashUntil = now + HAPPY_MS
       animate($, 350)
       scheduleSleep($)
 
@@ -796,15 +900,15 @@ export const register: Register = on => {
     }
   })
 
-  // The strip replaces the dim hint line under the prompt, carrying the
-  // engine's hint text at the right end of its second line.
+  // The strip replaces the dim hint line under the prompt, the engine's
+  // mode pill included, carrying the engine's hint text near its right end.
   on('ui.render', { component: 'PromptHint' }, async ($, e, next) => {
     if (e.surface !== 'terminal' || !e.viewport) return next(e)
     const snap = await read($, snapAtom)
     if (!snap) return next(e)
 
-    const hint = readHint(e.props.tail ? `${e.props.hint} ${e.props.tail}` : e.props.hint, pillPhrase)
-    pillPhrase = hint.seen
+    const hint = readHint(e.props.tail ? `${e.props.hint} ${e.props.tail}` : e.props.hint)
+    ;({ mode, leaving } = nextMode({ mode, leaving }, hint, e.props.isWorking || e.props.isDraft))
     const now = await $.clock.now()
     const canvas = paint({
       snap,
@@ -812,14 +916,25 @@ export const register: Register = on => {
       history: (await read($, historyAtom)) ?? [],
       counters: (await read($, countersAtom)) ?? NO_COUNTS,
       hint,
+      mode,
       pose: poseAt(now, snap),
       columns: e.viewport.columns,
       now,
       palette: findPalette((await read($, paletteAtom)) ?? '') ?? PALETTES[0]!,
       hidden: (await read($, hiddenAtom)) ?? DEFAULT_HIDDEN,
     })
-    const { Raster } = $.ui.resolve(e)
+    const { Box, Raster } = $.ui.resolve(e)
 
-    return <Raster key="pixelbar" columns={canvas.w} rows={canvas.h} cells={canvas.base64()} />
+    // The engine seats this site right of its pill and wraps the pill's
+    // ` · ` onto a row of its own once the site's content fills the row. So
+    // the site holds one cell, and the strip is drawn absolute from it,
+    // reaching back over the pill to the row's left margin.
+    return (
+      <Box width={1} height={canvas.h}>
+        <Box position="absolute" left={-pillOffset(mode)} top={0}>
+          <Raster key="pixelbar" columns={canvas.w} rows={canvas.h} cells={canvas.base64()} />
+        </Box>
+      </Box>
+    )
   })
 }

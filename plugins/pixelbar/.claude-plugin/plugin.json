@@ -1,7 +1,7 @@
 {
   "name": "pixelbar",
-  "description": "A single-row, full-width pixel-art status strip under the prompt: project and git, then Claude and session info (mode, model, effort, context, usage, cost, time), with an animated pixel walker.",
-  "version": "0.1.0",
+  "description": "A single-row, full-width pixel-art status strip under the prompt, in place of the hint line and mode indicator: an animated pixel walker, Claude and session info (mode, model, effort, context, usage, cost, time), then project and git at the right end.",
+  "version": "0.2.0",
   "author": {
     "name": "zeckon"
   },

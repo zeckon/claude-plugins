@@ -160,7 +160,12 @@ A mod is a plugin whose `hooks/hooks.json` is `{ "modules": ["./register.tsx"] }
 - Streaming events (`turn.step`, `process.spawn`) need an `async function*` hook ending in `return yield* next(e)`.
 - `$` may only be passed to functions declared at the module's top level, never to a closure inside `register`.
 
-The `PromptHint` site (the line under the prompt) does not own the whole row: outside default mode the engine draws its permission-mode pill (`⏵⏵ auto mode on`) to the left of the site, and `e.props.hint` then holds only `(shift+tab to cycle)`. `e.viewport.columns` is the full terminal width, so a tree sized to it squeezes the pill. To see what a site is actually handed, have the render hook `$.fs.write` `JSON.stringify(e.props)` to a scratch file.
+The `PromptHint` site (the line under the prompt) does not own the whole row: outside default mode the engine draws its permission-mode pill (`⏵⏵ auto mode on`) to the left of the site, and `e.props.hint` then holds only `(shift+tab to cycle)`. `e.viewport.columns` is the full terminal width, so a tree sized to it squeezes the pill. Measured on 2.1.308:
+
+- The pill is top-aligned beside a multi-row tree, so it always sits on the tree's first row; no site lies between the prompt box and the hint row.
+- Once the site's content fills the row, the engine wraps the pill's ` · ` onto an extra row below, whatever the site's flex props. To paint over the pill on one row, keep the site one cell wide and draw the rest from an absolute child at `left={-offset}`, the offset being the pill plus ` · ` (`2+1+phrase+3` for `⏵⏵`, `1+1+phrase+3` for `⏸`; every mode draws a pill, default's is `⏸ manual mode on`). The strip spans `columns - 4`. pixelbar's `PILL_OFFSETS` holds the measured values.
+- No API gives the permission mode. On shift+tab the hint briefly carries the phrase of the mode being *left* (`plan mode on (shift+tab to cycle)` on the way to auto); `classic.UserPromptSubmit`'s `permission_mode` is exact but comes only with a prompt; `classic.SessionStart` has no `permission_mode`.
+- To check a site's real layout, drive `claude --plugin-dir <mod>` in a pty with a terminal emulator (`pyte`) and print the bottom rows; `tmux` isn't installed in the sandbox. To see what a site is actually handed, have the render hook `$.fs.write` `JSON.stringify(e.props)` to a scratch file.
 
 Test with `claude plugin test plugins/<mod>`; in tests, stub every `$` call the mod makes (`on('session.cwd', () => ({ value: ... }))`). A `settings.read` stub returns the whole settings object, even when the mod reads one `{ key }`. Type-check with `npx -p typescript tsc -p <mod folder>` once the engine has written `.claude-plugin/types/`.
 
