@@ -42,6 +42,8 @@ declare module 'claude-code' {
       total: Tokens
       /** Tokens (input + output) of the last main-loop turns, oldest first, for the sparkline. */
       history: number[]
+      /** Id of the palette the strip paints in; also kept in `$.store` across sessions. */
+      palette: string
     }
   }
 }

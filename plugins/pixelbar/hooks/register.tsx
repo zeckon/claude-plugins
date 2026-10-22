@@ -13,17 +13,65 @@ const effortAtom = atom({ plugin: 'pixelbar', key: 'effort' } as const, null)
 const lastAtom = atom({ plugin: 'pixelbar', key: 'last' } as const, null)
 const totalAtom = atom({ plugin: 'pixelbar', key: 'total' } as const, ZERO)
 const historyAtom = atom({ plugin: 'pixelbar', key: 'history' } as const, [])
+const paletteAtom = atom({ plugin: 'pixelbar', key: 'palette' } as const, 'gameboy')
 
-// ── Palette: the original Game Boy's olive greens, plus one alert tone ───
+// ── Palettes: each one hue, dark to light, plus one alert tone ───────────
 
-const BASE = 0x0f380f // the strip's ground (darkest Game Boy shade)
-const C1 = 0x1f4d1f // empty gauge cells, trail
-const C2 = 0x306230 // tile ground
-const C3 = 0x5e8720 // quiet text
-const C4 = 0x8bac0f // labels
-const ACCENT = 0x9bbc0f // the walker, filled gauges (lightest Game Boy shade)
-const LIGHT = 0xe0f8d0 // values
-const ALERT = 0xff5050 // context past 80%
+type Palette = {
+  id: string
+  name: string
+  ground: number
+  tiles: number
+  labels: number
+  accent: number
+  values: number
+  alert: number
+}
+
+export const PALETTES: readonly Palette[] = [
+  { id: 'gameboy', name: 'Game Boy', ground: 0x0f380f, tiles: 0x306230, labels: 0x8bac0f, accent: 0x9bbc0f, values: 0xe0f8d0, alert: 0xff5050 },
+  { id: 'phosphor', name: 'Green phosphor', ground: 0x0b120c, tiles: 0x18301c, labels: 0x3f8f4c, accent: 0x39ff6a, values: 0xc8ffd2, alert: 0xffb000 },
+  { id: 'amber', name: 'Amber monitor', ground: 0x120c04, tiles: 0x2e1f08, labels: 0x9a6418, accent: 0xffb000, values: 0xffe2a8, alert: 0xff3b30 },
+  { id: 'slate', name: 'Cool slate', ground: 0x0e1116, tiles: 0x1f2733, labels: 0x5b6b82, accent: 0x7cc4ff, values: 0xdbe7f5, alert: 0xff6b5a },
+  { id: 'clay', name: 'Clay', ground: 0x14100e, tiles: 0x3d2c24, labels: 0xa96a50, accent: 0xd97757, values: 0xf2cdbb, alert: 0xff5a36 },
+  { id: 'synthwave', name: 'Synthwave', ground: 0x140a1f, tiles: 0x2d1747, labels: 0x8a4fbf, accent: 0xff4fd8, values: 0xf3d9ff, alert: 0x2de2e6 },
+  { id: 'ocean', name: 'Ocean', ground: 0x071a1f, tiles: 0x0f3640, labels: 0x2a8a96, accent: 0x4fe0d0, values: 0xd4f7f2, alert: 0xff7a59 },
+  { id: 'ice', name: 'Ice', ground: 0x0c1418, tiles: 0x22343d, labels: 0x6f8f9c, accent: 0xbfe9ff, values: 0xf2fbff, alert: 0xff4d6d },
+  { id: 'sepia', name: 'Sepia', ground: 0x17110b, tiles: 0x33261a, labels: 0x8c7254, accent: 0xd9b98c, values: 0xf5ead8, alert: 0xe0533d },
+  { id: 'grayscale', name: 'Grayscale', ground: 0x0d0d0d, tiles: 0x262626, labels: 0x7a7a7a, accent: 0xe0e0e0, values: 0xffffff, alert: 0xff4040 },
+  { id: 'virtualboy', name: 'Virtual Boy', ground: 0x0a0000, tiles: 0x330000, labels: 0x8c0000, accent: 0xff2020, values: 0xffb3b3, alert: 0xffffff },
+  { id: 'matrix', name: 'Matrix', ground: 0x000000, tiles: 0x002200, labels: 0x008f11, accent: 0x00ff41, values: 0xb8ffc8, alert: 0xff3b3b },
+]
+
+/** The palette named by id or name, loosely: `game boy`, `GameBoy`, `matrix`. */
+export function findPalette(query: string): Palette | undefined {
+  const key = query.toLowerCase().replace(/[^a-z0-9]/g, '')
+  return (
+    PALETTES.find(p => p.id === key || p.name.toLowerCase().replace(/[^a-z0-9]/g, '') === key) ??
+    PALETTES.find(p => p.id.startsWith(key))
+  )
+}
+
+// The colors drawing reads; `usePalette` sets them before each paint.
+let BASE = 0 // the strip's ground
+let C1 = 0 // empty gauge cells, trail
+let C2 = 0 // tile ground
+let C3 = 0 // quiet text
+let C4 = 0 // labels
+let ACCENT = 0 // the walker, filled gauges
+let LIGHT = 0 // values
+let ALERT = 0 // context past 80%
+
+function usePalette(p: Palette): void {
+  BASE = p.ground
+  C1 = mix(p.ground, p.tiles, 0.5)
+  C2 = p.tiles
+  C3 = mix(p.tiles, p.labels, 0.5)
+  C4 = p.labels
+  ACCENT = p.accent
+  LIGHT = p.values
+  ALERT = p.alert
+}
 
 function mix(a: number, b: number, t: number): number {
   const ch = (s: number) => Math.round(((a >> s) & 0xff) * (1 - t) + ((b >> s) & 0xff) * t) << s
@@ -274,7 +322,9 @@ export function paint(
   frame: number,
   working: boolean,
   columns: number,
+  palette: Palette = PALETTES[0]!,
 ): Canvas {
+  usePalette(palette)
   const c = new Canvas(Math.max(20, Math.min(512, columns - pillWidth(pill) - 1)))
 
   // The engine's remaining hint is right-aligned; it competes for room like
@@ -381,6 +431,14 @@ export const register: Register = on => {
 
   on('session.start', async ($, e, next) => {
     const started = await next(e)
+    await $.command.register({
+      name: 'pixelbar-palette',
+      description: 'Switch the pixelbar strip color palette (no name: the next one)',
+      argumentHint: '[name | list]',
+      immediate: true,
+    })
+    const saved = await $.store.get('palette')
+    if (typeof saved === 'string' && findPalette(saved)) await update($, paletteAtom, () => saved)
     await safeRefresh($)
     // Catches branch switches and edits made outside Claude.
     poll?.cancel()
@@ -439,6 +497,23 @@ export const register: Register = on => {
     return next(e)
   })
 
+  on('command.run', { command: 'pixelbar-palette' }, async ($, e) => {
+    const arg = (e.args ?? '').trim()
+    const current = (await read($, paletteAtom)) ?? 'gameboy'
+    const at = Math.max(0, PALETTES.findIndex(p => p.id === current))
+    const list = PALETTES.map((p, i) => `${i === at ? '>' : ' '} ${p.id.padEnd(11)} ${p.name}`).join('\n')
+
+    if (arg === 'list') return { text: `Palettes (/pixelbar-palette <name> to pick, /pixelbar-palette for the next):\n${list}` }
+
+    const next = arg ? findPalette(arg) : PALETTES[(at + 1) % PALETTES.length]
+    if (!next) return { text: `No palette "${arg}". Pick one of:\n${list}` }
+
+    await update($, paletteAtom, () => next.id)
+    await $.store.set('palette', next.id)
+    const n = PALETTES.indexOf(next) + 1
+    return { text: `pixelbar palette: ${next.name} (${n}/${PALETTES.length})` }
+  })
+
   on('session.measure', async ($, e, next) => {
     await safeRefresh($)
     return next(e)
@@ -455,7 +530,8 @@ export const register: Register = on => {
 
     const hint = readHint(e.props.tail ? `${e.props.hint} ${e.props.tail}` : e.props.hint, pillPhrase)
     pillPhrase = hint.seen
-    const canvas = paint(snap, total, history, hint, frame, e.props.isWorking, e.viewport.columns)
+    const palette = findPalette((await read($, paletteAtom)) ?? '') ?? PALETTES[0]!
+    const canvas = paint(snap, total, history, hint, frame, e.props.isWorking, e.viewport.columns, palette)
     const { Raster } = $.ui.resolve(e)
 
     return <Raster key="pixelbar" columns={canvas.w} rows={canvas.h} cells={canvas.base64()} />

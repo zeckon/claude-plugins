@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'claude-code/testing'
+import { describe, expect, mock, test } from 'claude-code/testing'
 
 const HINT = (columns: number, hint = '? for shortcuts') =>
   ({
@@ -40,6 +40,8 @@ function fakeSession(on: Parameters<Parameters<typeof test>[1]>[1]) {
   on('env.get', () => ({ value: undefined }))
   on('clock.every', () => ({ value: undefined }))
   on('ui.log', () => ({ value: undefined }))
+  on('command.register', () => ({ value: { command: 'pixelbar-palette' } }))
+  mock.store(on)
 }
 
 /** The Raster's cells back as text rows, to read what was painted. */
@@ -59,7 +61,41 @@ function decode(raster: { props: Record<string, unknown> } | undefined): string[
 type Mounted = { props: { columns: number; rows: number } }
 
 // The hints below are what the engine handed the site in a real session.
+/** The background color of the strip's first cell: the palette's ground. */
+function ground(raster: { props: Record<string, unknown> } | undefined): number {
+  const bin = atob((raster?.props as { cells: string }).cells)
+  return new Uint32Array(Uint8Array.from(bin, ch => ch.charCodeAt(0)).buffer)[2]!
+}
+
 describe('pixelbar strip', () => {
+  test('/pixelbar-palette cycles, picks by name, lists, and wraps around', async ($, on) => {
+    fakeSession(on)
+    await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+
+    const strip = async () => {
+      const ui = await $.ui.mount(HINT(120))
+      const g = ground((await ui.find({ type: 'Raster' })) as never)
+      await ui.unmount()
+      return g
+    }
+    expect(await strip()).toBe(0x0f380f) // Game Boy by default
+
+    expect((await $.command.run({ command: 'pixelbar-palette', args: '' })).text).toBe('pixelbar palette: Green phosphor (2/12)')
+    expect(await strip()).toBe(0x0b120c)
+
+    expect((await $.command.run({ command: 'pixelbar-palette', args: 'Virtual Boy' })).text).toContain('Virtual Boy (11/12)')
+    expect(await strip()).toBe(0x0a0000)
+
+    expect((await $.command.run({ command: 'pixelbar-palette', args: 'list' })).text).toContain('> virtualboy')
+    expect((await $.command.run({ command: 'pixelbar-palette', args: 'nope' })).text).toContain('No palette "nope"')
+
+    // The last palette wraps around to the first.
+    await $.command.run({ command: 'pixelbar-palette', args: 'matrix' })
+    expect(await strip()).toBe(0x000000)
+    await $.command.run({ command: 'pixelbar-palette', args: '' })
+    expect(await strip()).toBe(0x0f380f)
+  })
+
   test('default mode: a MODE tile, the full width less the last column', async ($, on) => {
     fakeSession(on)
     await $.session.start({ cwd: '/Users/zeckon/workspace/claude-plugins', surface: 'terminal', isInteractive: true })

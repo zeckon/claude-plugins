@@ -6,7 +6,7 @@ A single-row, full-width pixel-art status strip drawn **under** the Claude Code 
  ▛▜ ▐ MODE AUTO ▌ ▐ DIR claude-plugins ▌ ▐ GIT feat/pixelbar *2 ^2 ▌ ▐ MODEL OPUS 5.5 ▌ ▐ EFFORT ███░░ HIGH ▌ CTX ▆▆▆▆▆▆▆▆▆▆░░░░ 42% 84K/200K TOK ▂▅▃█▆ 5H ▆▆▆░░░ 37% ▐ SESSION 7T 210K $1.23 ▌ ░░░░ ? for shortcuts
 ```
 
-It is painted as a terminal `Raster` (every cell's character and color set directly) in the original Game Boy's olive-green shades, with a single red alert tone for a context window past 80%.
+It is painted as a terminal `Raster` (every cell's character and color set directly) in one of 12 single-hue palettes (Game Boy by default), with a single alert tone for a context window past 80%.
 
 | Part | Shows |
 |---|---|
@@ -23,6 +23,33 @@ It is painted as a terminal `Raster` (every cell's character and color set direc
 | right end | The rest of the engine's hint (`? for shortcuts`, `esc to interrupt`) |
 
 On a narrow terminal the least important parts drop out first: `TOK` and `5H`, then `SESSION`, the hint, `MODEL` and `EFFORT`, then `GIT`. Only the terminal draws the strip; the desktop app and other surfaces keep their normal hint line.
+
+## Palettes
+
+Switch with the `/pixelbar-palette` command (it also works while Claude is busy). The choice is remembered across sessions.
+
+| Command | Does |
+|---|---|
+| `/pixelbar-palette` | The next palette |
+| `/pixelbar-palette <name>` | That palette, e.g. `/pixelbar-palette matrix`, `/pixelbar-palette virtual boy` |
+| `/pixelbar-palette list` | Lists them, marking the current one |
+
+| id | Palette | Accent | Alert |
+|---|---|---|---|
+| `gameboy` | Game Boy (default) | olive `#9bbc0f` | `#ff5050` |
+| `phosphor` | Green phosphor | `#39ff6a` | amber `#ffb000` |
+| `amber` | Amber monitor | `#ffb000` | `#ff3b30` |
+| `slate` | Cool slate | ice blue `#7cc4ff` | coral `#ff6b5a` |
+| `clay` | Clay | `#d97757` | `#ff5a36` |
+| `synthwave` | Synthwave | pink `#ff4fd8` | cyan `#2de2e6` |
+| `ocean` | Ocean | teal `#4fe0d0` | `#ff7a59` |
+| `ice` | Ice | `#bfe9ff` | `#ff4d6d` |
+| `sepia` | Sepia | `#d9b98c` | `#e0533d` |
+| `grayscale` | Grayscale | `#e0e0e0` | `#ff4040` |
+| `virtualboy` | Virtual Boy | red `#ff2020` | white `#ffffff` |
+| `matrix` | Matrix | `#00ff41` | `#ff3b3b` |
+
+Each palette is five shades of one hue (ground, tiles, labels, accent, values) plus the alert color; the two in-between shades are mixed from those.
 
 ## Install
 
