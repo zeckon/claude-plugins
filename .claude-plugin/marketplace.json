@@ -19,6 +19,11 @@
       "name": "explain",
       "source": "./plugins/explain",
       "description": "Turns a code change into a lesson. /explain:diff investigates a diff, branch, or PR and generates a self-contained interactive HTML explainer — background, problem, intuition, diagrams, code walkthrough, and a comprehension quiz."
+    },
+    {
+      "name": "pixelbar",
+      "source": "./plugins/pixelbar",
+      "description": "A single-row, full-width pixel-art status strip under the prompt: project and git, then Claude and session info (mode, model, effort, context, usage, cost, time), with an animated pixel walker."
     }
   ]
 }

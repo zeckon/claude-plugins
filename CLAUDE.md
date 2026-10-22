@@ -153,6 +153,17 @@ Skills live at `plugins/<plugin>/skills/<skill>/SKILL.md`. Frontmatter must incl
 
 Hooks live at `plugins/<plugin>/hooks/hooks.json`. Hook scripts in `plugins/<plugin>/scripts/`. User-facing wrappers (if any) in `plugins/<plugin>/bin/`. Hooks and shell-injection skills prompt for Bash permission on first use; document per-plugin permission needs in the plugin's README.
 
+### Mods (TypeScript hooks modules)
+
+A mod is a plugin whose `hooks/hooks.json` is `{ "modules": ["./register.tsx"] }` (example: `plugins/pixelbar`). State it keeps goes in `types/index.d.ts`, named as `"types"` in `plugin.json`. Gotchas `claude plugin validate` enforces:
+
+- Streaming events (`turn.step`, `process.spawn`) need an `async function*` hook ending in `return yield* next(e)`.
+- `$` may only be passed to functions declared at the module's top level, never to a closure inside `register`.
+
+The `PromptHint` site (the line under the prompt) does not own the whole row: outside default mode the engine draws its permission-mode pill (`⏵⏵ auto mode on`) to the left of the site, and `e.props.hint` then holds only `(shift+tab to cycle)`. `e.viewport.columns` is the full terminal width, so a tree sized to it squeezes the pill. To see what a site is actually handed, have the render hook `$.fs.write` `JSON.stringify(e.props)` to a scratch file.
+
+Test with `claude plugin test plugins/<mod>`; in tests, stub every `$` call the mod makes (`on('session.cwd', () => ({ value: ... }))`). A `settings.read` stub returns the whole settings object, even when the mod reads one `{ key }`. Type-check with `npx -p typescript tsc -p <mod folder>` once the engine has written `.claude-plugin/types/`.
+
 ### Validation
 
 ```bash
