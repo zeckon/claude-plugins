@@ -1,18 +1,12 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-const BAND = (bodyColumns: number) =>
+const HINT = (columns: number, hint = '? for shortcuts') =>
   ({
     plugin: 'pixelbar',
-    component: 'AbovePrompt',
+    component: 'PromptHint',
     surface: 'terminal',
-    props: {
-      hasSurvey: false,
-      isWorking: false,
-      maxRows: 20,
-      bodyColumns,
-      scroll: { offset: 0, bodyRows: 20 },
-      view: {},
-    },
+    viewport: { columns, rows: 40 },
+    props: { isDraft: false, isWorking: false, hint },
   }) as const
 
 const GIT_STATUS = [
@@ -48,29 +42,57 @@ function fakeSession(on: Parameters<Parameters<typeof test>[1]>[1]) {
   on('ui.log', () => ({ value: undefined }))
 }
 
-describe('pixelbar band', () => {
-  test('shows folder, branch, model, effort, context and session on a wide terminal', async ($, on) => {
+/** The Raster's cells back as text rows, to read what was painted. */
+function decode(raster: { props: Record<string, unknown> } | undefined): string[] {
+  const { columns, rows, cells } = raster?.props as { columns: number; rows: number; cells: string }
+  const bin = atob(cells)
+  const words = new Uint32Array(Uint8Array.from(bin, ch => ch.charCodeAt(0)).buffer)
+  const out: string[] = []
+  for (let y = 0; y < rows; y++) {
+    let line = ''
+    for (let x = 0; x < columns; x++) line += String.fromCodePoint(words[(y * columns + x) * 3]!)
+    out.push(line)
+  }
+  return out
+}
+
+describe('pixelbar strip', () => {
+  test('paints two full-width rows of project and session facts', async ($, on) => {
     fakeSession(on)
     await $.session.start({ cwd: '/Users/zeckon/workspace/claude-plugins', surface: 'terminal', isInteractive: true })
 
-    const ui = await $.ui.mount(BAND(200))
-    for (const words of [/claude-plugins/, /feat\/pixelbar/, / \*2/, / \^2/, /OPUS 5\.5/, / HIGH/, / 42%/, /84K\/200K/, /7 TURNS/, /\$1\.23/, /37%/]) {
-      expect(await ui.find({ type: 'Text', text: words })).toBeDefined()
+    const ui = await $.ui.mount(HINT(180))
+    const raster = await ui.find({ type: 'Raster' })
+    const [top, bottom] = decode(raster as never)
+    console.log(`\n${top}\n${bottom}`)
+
+    expect((raster as never as { props: { columns: number; rows: number } }).props.rows).toBe(2)
+    expect((raster as never as { props: { columns: number } }).props.columns).toBe(180)
+    for (const words of ['claude-plugins', 'feat/pixelbar *2 ^2', 'OPUS 5.5', '███░░ HIGH', '7 TURNS $1.23']) {
+      expect(top).toContain(words)
+    }
+    for (const words of ['CTX', '42% 84K/200K', '5H', '37%', '? for shortcuts']) {
+      expect(bottom).toContain(words)
     }
     await ui.unmount()
   })
 
-  test('drops the least important tiles when narrow, keeping the folder', async ($, on) => {
+  test('fits a narrow terminal, keeping folder and context', async ($, on) => {
     fakeSession(on)
     await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
 
-    const ui = await $.ui.mount({ ...BAND(60), props: { ...BAND(60).props, maxRows: 3 } })
-    expect(await ui.find({ type: 'Text', text: /claude-plugins/ })).toBeDefined()
-    expect(await ui.find({ type: 'Text', text: /37%/ })).toBeUndefined()
+    const ui = await $.ui.mount(HINT(70, 'esc to interrupt'))
+    const [top, bottom] = decode((await ui.find({ type: 'Raster' })) as never)
+    console.log(`\n${top}\n${bottom}`)
+
+    expect(top).toContain('claude-plugins')
+    expect(top).not.toContain('SESSION')
+    expect(bottom).toContain('42%')
+    expect(bottom).toContain('esc to interrupt')
     await ui.unmount()
   })
 
-  test('steps aside for a survey', async ($, on) => {
+  test('keeps the engine hint off non-terminal surfaces', async ($, on) => {
     fakeSession(on)
     on('ui.render', ($, e) => {
       const { Text } = $.ui.resolve(e)
@@ -78,8 +100,8 @@ describe('pixelbar band', () => {
     })
     await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
 
-    const ui = await $.ui.mount({ ...BAND(200), props: { ...BAND(200).props, hasSurvey: true } })
-    expect(await ui.find({ type: 'Text', text: /claude-plugins/ })).toBeUndefined()
+    const ui = await $.ui.mount({ ...HINT(120), surface: 'desktop' })
+    expect(await ui.find({ type: 'Text', text: /engine/ })).toBeDefined()
     await ui.unmount()
   })
 })

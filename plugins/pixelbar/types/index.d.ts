@@ -40,6 +40,8 @@ declare module 'claude-code' {
       last: Tokens | null
       /** Token counts summed over this session's main-loop turns. */
       total: Tokens
+      /** Tokens (input + output) of the last main-loop turns, oldest first, for the sparkline. */
+      history: number[]
     }
   }
 }
