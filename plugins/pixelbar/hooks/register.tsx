@@ -17,7 +17,7 @@ const historyAtom = atom({ plugin: 'pixelbar', key: 'history' } as const, [])
 const paletteAtom = atom({ plugin: 'pixelbar', key: 'palette' } as const, 'gameboy')
 const countersAtom = atom({ plugin: 'pixelbar', key: 'counters' } as const, NO_COUNTS)
 /** Sections hidden until /pixelbar-sections says otherwise. */
-export const DEFAULT_HIDDEN: readonly string[] = ['commit']
+export const DEFAULT_HIDDEN: readonly string[] = ['commit', '7d', 'last', 'agents', 'tools', 'edits', 'compacts', 'hint']
 const hiddenAtom = atom({ plugin: 'pixelbar', key: 'hidden' } as const, [...DEFAULT_HIDDEN])
 
 // ── Palettes: each one hue, dark to light, plus one alert tone ───────────

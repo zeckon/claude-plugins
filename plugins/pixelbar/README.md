@@ -3,7 +3,7 @@
 A single-row, full-width, pixel-art status strip drawn **under** the Claude Code prompt. A little pixel walker on the left, then your project (folder and git), a thin divider, then Claude and the session (mode, model, effort, context, usage, cost, time).
 
 ```
- ▛▜  ▐ DIR claude-plugins ▌ ▐ GIT feat/pixelbar *2 ^2 ▌ ▐ DIFF +124 -37 ▌ │ ▐ MODE DEFAULT ▌ ▐ MODEL OPUS 5.5 ▌ ▐ EFFORT ███░░ HIGH ▌ CTX ▆▆▆▆▆▆▆░░░ 42% 84K/200K 5H ▆▆░░ 37% ▐ SESSION 7T $1.23 ▌ ▐ TIME 1h12m ▌ ░░ ? for shortcuts
+ ▛▜  ▐ DIR claude-plugins ▌ ▐ GIT feat/pixelbar *2 ^2 ▌ ▐ DIFF +124 -37 ▌ │ ▐ MODE DEFAULT ▌ ▐ MODEL OPUS 5.5 ▌ ▐ EFFORT ███░░ HIGH ▌ CTX ▆▆▆▆▆▆▆░░░ 42% 84K/200K 5H ▆▆░░ 37% ▐ SESSION 7T $1.23 ▌ ▐ TIME 1h12m ▌ ░░░░░░░░░░░░░░░░
 ```
 
 In your terminal it is drawn in color, in one of [12 palettes](#palettes) (Game Boy greens by default). Every section can be [switched on or off](#choosing-sections).
@@ -69,10 +69,10 @@ Everything sits on one row, left to right:
 | Part | Holds |
 |---|---|
 | Walker | A 2-cell pixel character whose mood shows what's going on |
-| Project sections | `DIR`, `GIT`, `DIFF`, `COMMIT` (hidden by default), `STASH` |
+| Project sections | `DIR`, `GIT`, `DIFF`, `STASH`; `COMMIT` hidden by default |
 | Divider `│` | Separates the two groups; flashes after long turns |
-| Claude and session sections | `MODE`, `MODEL`, `EFFORT`, `CTX`, `CACHE`, `TOK`, `5H`, `7D`, `SESSION`, `TIME`, `LAST`, `AGENTS`, `TOOLS`, `EDITS`, `CMP` |
-| Hint | Claude Code's own hint text, at the right end |
+| Claude and session sections | `MODE`, `MODEL`, `EFFORT`, `CTX`, `CACHE`, `TOK`, `5H`, `SESSION`, `TIME`; `7D`, `LAST`, `AGENTS`, `TOOLS`, `EDITS`, `CMP` hidden by default |
+| Hint | Claude Code's own hint text, at the right end; hidden by default |
 
 Most sections are pixel tiles, `▐ LABEL value ▌`, whose half-block edges give them a stepped outline. Gauges (`CTX`, `5H`, `7D`) are bars of `▆` cells. Any space left over is filled with a faint dithered trail `░░░`, so the strip always spans the full width.
 
@@ -169,7 +169,7 @@ A sparkline (`▁▂▃▄▅▆▇█`) of the tokens each of your last 12 turn
 
 ### `5H` and `7D`: usage limits
 
-How much of your five-hour and seven-day rate-limit windows are used, each as a small gauge and a percent. Shown only on a Claude subscription that reports them. They turn to the alert color at 90%.
+`7D` is **hidden by default**; switch it on with `/pixelbar-sections on 7d`. How much of your five-hour and seven-day rate-limit windows are used, each as a small gauge and a percent. Shown only on a Claude subscription that reports them. They turn to the alert color at 90%.
 
 ### `SESSION`: session totals
 
@@ -185,11 +185,11 @@ How long the session has been running, for example `1h12m`.
 
 ### `LAST`: last turn
 
-How long Claude's last turn took, for example `48s`.
+**Hidden by default** (`/pixelbar-sections on last`). How long Claude's last turn took, for example `48s`.
 
 ### `AGENTS`: subagents
 
-How many subagents are pending, running or waiting, shown in the accent color. Hidden when none are.
+**Hidden by default** (`/pixelbar-sections on agents`). How many subagents are pending, running or waiting, shown in the accent color. Hidden when none are.
 
 ### `TOOLS`, `EDITS`, `CMP`: activity counts
 
@@ -199,15 +199,15 @@ How many subagents are pending, running or waiting, shown in the accent color. H
 | `EDITS` | Edit, Write, MultiEdit and NotebookEdit calls this session |
 | `CMP` | Times the conversation was compacted |
 
-Each is hidden until its count is above zero.
+All three are **hidden by default** (`/pixelbar-sections on tools edits compacts`). Once switched on, each still stays out of sight until its count is above zero.
 
 ### Hint (right end)
 
-What's left of Claude Code's own hint line, in a dim shade: `? for shortcuts`, `esc to interrupt` while Claude works, and so on. The `(shift+tab to cycle)` reminder that comes with the mode indicator is left out to save space.
+**Hidden by default** (`/pixelbar-sections on hint`). What's left of Claude Code's own hint line, in a dim shade: `? for shortcuts`, `esc to interrupt` while Claude works, and so on. The `(shift+tab to cycle)` reminder that comes with the mode indicator is left out to save space.
 
 ## Choosing sections
 
-Every section can be switched off, and back on, with `/pixelbar-sections`. It works even while Claude is busy, and your choice is remembered for future sessions. By default everything is shown except `COMMIT`.
+Every section can be switched off, and back on, with `/pixelbar-sections`. It works even while Claude is busy, and your choice is remembered for future sessions. By default these are hidden: `commit`, `7d`, `last`, `agents`, `tools`, `edits`, `compacts` and `hint`. Everything else is shown.
 
 | Command | Does |
 |---|---|
@@ -216,7 +216,7 @@ Every section can be switched off, and back on, with `/pixelbar-sections`. It wo
 | `/pixelbar-sections off tools edits` | Hides them, whatever their state |
 | `/pixelbar-sections on commit` | Shows them, whatever their state |
 | `/pixelbar-sections all` | Shows every section |
-| `/pixelbar-sections reset` | Back to the defaults (everything but `COMMIT`) |
+| `/pixelbar-sections reset` | Back to the defaults |
 
 Section names:
 - **Project:** `dir`, `git`, `diff`, `commit`, `stash`.

@@ -94,20 +94,21 @@ describe('pixelbar strip', () => {
     expect(columns).toBe(319)
     expect(row.slice(1, 3)).toBe('▛▜')
     const order = ['DIR claude-plugins', 'GIT feat/pixelbar *2 ^2', 'DIFF +124 -37', 'STASH 1', '│', 'MODE DEFAULT',
-      'OPUS 5.5', '███░░ HIGH', 'CTX', '42% 84K/200K', '5H', '37%', '7D', '12%', 'SESSION 7T $1.23', 'TIME 1h12m', '? for shortcuts']
+      'OPUS 5.5', '███░░ HIGH', 'CTX', '42% 84K/200K', '5H', '37%', 'SESSION 7T $1.23', 'TIME 1h12m']
     let at = 0
     for (const w of order) {
       const found = row.indexOf(w, at)
       expect(found).toBeGreaterThan(-1)
       at = found
     }
-    // COMMIT is hidden until switched on.
-    expect(row).not.toContain('COMMIT')
+    // Hidden until switched on.
+    for (const w of ['COMMIT', '7D', '? for shortcuts']) expect(row).not.toContain(w)
   })
 
   test('another mode: leaves room for the engine pill and draws no MODE tile', async ($, on) => {
     fakeSession(on)
     await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+    await $.command.run({ command: 'pixelbar-sections', args: 'on hint' })
 
     const first = await paintStrip($, 200, 'auto mode on (shift+tab to cycle)')
     expect(first.columns).toBe(200 - 'auto mode on'.length - 4 - 1)
@@ -166,10 +167,14 @@ describe('pixelbar strip', () => {
     expect(listed).toContain('[ ] commit')
     expect(listed).toContain('[x] diff')
 
+    expect(listed).toContain('[ ] hint')
+
     expect((await run('commit diff')).text).toContain('[x] commit')
     expect(await row()).toContain('COMMIT 5m feat(pixelbar): two lines')
     expect(await row()).not.toContain('DIFF')
 
+    await run('on hint')
+    expect(await row()).toContain('? for shortcuts')
     await run('off hint model')
     expect(await row()).not.toContain('? for shortcuts')
     expect(await row()).not.toContain('OPUS')
@@ -182,10 +187,12 @@ describe('pixelbar strip', () => {
     await run('reset')
     expect(await row()).not.toContain('COMMIT')
     expect(await row()).toContain('DIFF')
-    expect(await row()).toContain('? for shortcuts')
+    expect(await row()).not.toContain('? for shortcuts')
 
     await run('all')
     expect(await row()).toContain('COMMIT')
+    expect(await row()).toContain('7D')
+    expect(await row()).toContain('? for shortcuts')
   })
 
   test('/pixelbar-palette cycles, picks by name, lists, and wraps around', async ($, on) => {
