@@ -1,11 +1,9 @@
 # pixelbar
 
-A full-width, pixel-art status strip drawn **under** the Claude Code prompt: a pixel character on the left, and two lines of information beside it, divided by a thin rule. The first line is about your project (folder and git). The second is about Claude and the session (mode, model, effort, context, usage, cost, time).
+A single-row, full-width, pixel-art status strip drawn **under** the Claude Code prompt. A little pixel walker on the left, then your project (folder and git), a thin divider, then Claude and the session (mode, model, effort, context, usage, cost, time).
 
 ```
-  ▄█▄▄█▄    ▐ DIR claude-plugins ▌ ▐ GIT feat/pixelbar *2 ^2 ▌ ▐ DIFF +124 -37 ▌ ▐ COMMIT 5m feat(pixelbar): two lines ▌ ▐ STASH 1 ▌ ░░░░░░░░░░░░░░░░░
- ██▀██▀██   ╶──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────╴
- ▄▀ ▀▀ ▀▄   ▐ MODE DEFAULT ▌ ▐ MODEL OPUS 5.5 ▌ ▐ EFFORT ███░░ HIGH ▌ CTX ▆▆▆▆▆▆▆▆░░░░ 42% 84K/200K 5H ▆▆▆░░░ 37% ▐ SESSION 7T $1.23 ▌ ░░ ? for shortcuts
+ ▛▜  ▐ DIR claude-plugins ▌ ▐ GIT feat/pixelbar *2 ^2 ▌ ▐ DIFF +124 -37 ▌ │ ▐ MODE DEFAULT ▌ ▐ MODEL OPUS 5.5 ▌ ▐ EFFORT ███░░ HIGH ▌ CTX ▆▆▆▆▆▆▆░░░ 42% 84K/200K 5H ▆▆░░ 37% ▐ SESSION 7T $1.23 ▌ ▐ TIME 1h12m ▌ ░░ ? for shortcuts
 ```
 
 In your terminal it is drawn in color, in one of [12 palettes](#palettes) (Game Boy greens by default). Every section can be [switched on or off](#choosing-sections).
@@ -14,9 +12,9 @@ In your terminal it is drawn in color, in one of [12 palettes](#palettes) (Game 
 
 - [Install](#install)
 - [The strip at a glance](#the-strip-at-a-glance)
-- [The character](#the-character)
-- [Line 1: project](#line-1-project)
-- [Line 2: Claude and the session](#line-2-claude-and-the-session)
+- [The walker](#the-walker)
+- [Project sections](#project-sections)
+- [Claude and session sections](#claude-and-session-sections)
 - [Choosing sections](#choosing-sections)
 - [Narrow terminals](#narrow-terminals)
 - [Palettes](#palettes)
@@ -66,31 +64,33 @@ claude --plugin-dir plugins/pixelbar
 
 ## The strip at a glance
 
-The strip is three terminal rows tall, with the character standing to the left of all three:
+Everything sits on one row, left to right:
 
-| Row | Holds |
+| Part | Holds |
 |---|---|
-| 1 | **Project line:** `DIR`, `GIT`, `DIFF`, `COMMIT`, `STASH` |
-| 2 | **Separator:** a thin rule `╶────╴` between the two lines |
-| 3 | **Claude line:** `MODE`, `MODEL`, `EFFORT`, `CTX`, `CACHE`, `TOK`, `5H`, `7D`, `SESSION`, `TIME`, `LAST`, `AGENTS`, `TOOLS`, `EDITS`, `CMP`, and the hint |
+| Walker | A 2-cell pixel character whose mood shows what's going on |
+| Project sections | `DIR`, `GIT`, `DIFF`, `COMMIT` (hidden by default), `STASH` |
+| Divider `│` | Separates the two groups; flashes after long turns |
+| Claude and session sections | `MODE`, `MODEL`, `EFFORT`, `CTX`, `CACHE`, `TOK`, `5H`, `7D`, `SESSION`, `TIME`, `LAST`, `AGENTS`, `TOOLS`, `EDITS`, `CMP` |
+| Hint | Claude Code's own hint text, at the right end |
 
-Most sections are pixel tiles, `▐ LABEL value ▌`, whose half-block edges give them a stepped outline. Gauges (`CTX`, `5H`, `7D`) are bars of `▆` cells. Any space left on a line is filled with a faint dithered trail `░░░`, so the strip always spans the full width.
+Most sections are pixel tiles, `▐ LABEL value ▌`, whose half-block edges give them a stepped outline. Gauges (`CTX`, `5H`, `7D`) are bars of `▆` cells. Any space left over is filled with a faint dithered trail `░░░`, so the strip always spans the full width.
 
-When a turn that took **a minute or more** finishes, the separator flashes in the accent color for a moment, so a long job's end is easy to notice.
+When a turn that took **a minute or more** finishes, the divider flashes in the accent color for a moment, so a long job's end is easy to notice.
 
-## The character
+## The walker
 
-An 8×6-pixel creature drawn with half-block characters, spanning the full height of the strip. Its mood shows what's going on:
+A tiny creature built from quarter-block characters, two cells wide, with a third cell beside it for sparkles and z's. Its mood shows what's going on:
 
 | Mood | Looks like | When |
 |---|---|---|
-| Idle | Standing still, muted color | Nothing is happening |
-| Walking | Accent color, legs stepping | Claude is working on a turn |
-| Happy | Arms up, hopping, `*` `+` sparkles | For a moment after a turn finishes |
-| Panicking | Alert color, wide eyes, shaking | Context window at 80% or more |
-| Asleep | Antennae down, eyes shut, `z` `Z` drifting | No activity for 5 minutes; wakes when you send a prompt |
+| Idle | `▛▜` standing still, muted color | Nothing is happening |
+| Walking | `▛▜` / `▜▛` stepping, accent color | Claude is working on a turn |
+| Happy | `▟▙` / `▛▜` hopping with `*` `+` sparkles | For a moment after a turn finishes |
+| Panicking | Shaking, alert color | Context window at 80% or more |
+| Asleep | `▄▄` curled up, `z` `Z` drifting | No activity for 5 minutes; wakes when you send a prompt |
 
-## Line 1: project
+## Project sections
 
 ### `DIR`: working folder
 
@@ -114,7 +114,7 @@ Lines added and removed in the working tree against the last commit, for example
 
 ### `COMMIT`: last commit
 
-How long ago the last commit was made, and its subject: `5m feat(pixelbar): two lines`. Ages read `48s`, `12m`, `1h12m`, `3d`. The subject is cut at 36 characters.
+**Hidden by default**; switch it on with `/pixelbar-sections on commit`. How long ago the last commit was made, and its subject: `5m feat(pixelbar): two lines`. Ages read `48s`, `12m`, `1h12m`, `3d`. The subject is cut at 36 characters.
 
 ### `STASH`: stashed changes
 
@@ -122,7 +122,7 @@ How many entries `git stash` holds. Hidden when there are none.
 
 All git sections refresh after every turn and every 15 seconds, so branch switches, commits and edits you make outside Claude show up too.
 
-## Line 2: Claude and the session
+## Claude and session sections
 
 ### `MODE`: permission mode
 
@@ -157,7 +157,7 @@ How full the conversation's context window is:
 - **Percent:** for example `42%`.
 - **Tokens:** used / window size, for example `84K/200K`.
 
-At **80% or more**, the filled gauge and the numbers switch to the palette's alert color, and the character panics. That's a cue to `/compact` or start fresh soon.
+At **80% or more**, the filled gauge and the numbers switch to the palette's alert color, and the walker panics. That's a cue to `/compact` or start fresh soon.
 
 ### `CACHE`: cache hit rate
 
@@ -207,33 +207,33 @@ What's left of Claude Code's own hint line, in a dim shade: `? for shortcuts`, `
 
 ## Choosing sections
 
-Every section can be switched off, and back on, with `/pixelbar-sections`. It works even while Claude is busy, and your choice is remembered for future sessions.
+Every section can be switched off, and back on, with `/pixelbar-sections`. It works even while Claude is busy, and your choice is remembered for future sessions. By default everything is shown except `COMMIT`.
 
 | Command | Does |
 |---|---|
 | `/pixelbar-sections` | Lists every section with `[x]` (shown) or `[ ]` (hidden) |
 | `/pixelbar-sections commit diff` | Toggles each named section |
 | `/pixelbar-sections off tools edits` | Hides them, whatever their state |
-| `/pixelbar-sections on tools` | Shows them, whatever their state |
-| `/pixelbar-sections reset` | Shows everything again |
+| `/pixelbar-sections on commit` | Shows them, whatever their state |
+| `/pixelbar-sections all` | Shows every section |
+| `/pixelbar-sections reset` | Back to the defaults (everything but `COMMIT`) |
 
 Section names:
-- **Line 1:** `dir`, `git`, `diff`, `commit`, `stash`.
-- **Line 2:** `mode`, `model`, `effort`, `ctx`, `cache`, `tok`, `5h`, `7d`, `session`, `time`, `last`, `agents`, `tools`, `edits`, `compacts`, `hint`.
+- **Project:** `dir`, `git`, `diff`, `commit`, `stash`.
+- **Claude and session:** `mode`, `model`, `effort`, `ctx`, `cache`, `tok`, `5h`, `7d`, `session`, `time`, `last`, `agents`, `tools`, `edits`, `compacts`, `hint`.
 
 ## Narrow terminals
 
-Each line stays on its own row. When a line doesn't fit, its least important sections drop out first:
+When the row doesn't fit, the least important sections drop out first, in this order:
 
-- **Line 1:** `STASH`, then `COMMIT`, then `DIFF`. `DIR` and `GIT` stay.
-- **Line 2**, in this order:
-  1. `7D`, `TOOLS`, `CMP`
-  2. `TOK`, `5H`, `CACHE`, `LAST`, `EDITS`
-  3. `SESSION`, `TIME`, `AGENTS`
-  4. The hint
-  5. `MODEL`, `EFFORT`
+1. `STASH`, `7D`, `TOOLS`, `CMP`
+2. `COMMIT` (if shown), `TOK`, `5H`, `CACHE`, `LAST`, `EDITS`
+3. `DIFF`, `SESSION`, `TIME`, `AGENTS`
+4. The hint
+5. `MODEL`, `EFFORT`
+6. `GIT`
 
-  `MODE` and `CTX` stay.
+The walker, `DIR`, `MODE` and `CTX` stay.
 
 The strip always stops one column short of the terminal's right edge, because writing into the last column can make some terminals wrap and leave an empty line.
 
@@ -278,7 +278,7 @@ Each palette defines five shades (ground, tiles, labels, accent, values) plus th
 
 ## Limitations
 
-- **The mode is inferred from the hint line.** Mods have no direct way to read the permission mode, so the strip notices the mode indicator through the hint text. If the strip ever overlaps or cuts off the indicator, press shift+tab once to resync.
+- **The mode is inferred from the hint line.** Mods have no direct way to read the permission mode, so the strip notices Claude Code's mode indicator through the hint text. The indicator is drawn by Claude Code to the left of the strip, not inside it. If the strip ever overlaps or cuts off the indicator, press shift+tab once to resync.
 - **No single-key shortcuts.** Mods can only attach to Claude Code's existing keybindings, so a key would mean taking one over. Palettes and sections are switched with slash commands instead.
 - **ASCII text only.** Each cell of the strip must hold one single-width character, so non-ASCII characters in folder names, branch names or commit subjects show as spaces.
 - **Some counts start when the plugin loads.** Token sums, the sparkline, `CACHE`, `TOOLS`, `EDITS`, `CMP` and `LAST` count from when the plugin started in this session. Cost, context, `TIME` and the usage limits come from Claude Code and are always complete.
@@ -290,10 +290,10 @@ The plugin is three files:
 | File | Role |
 |---|---|
 | `hooks/hooks.json` | Tells Claude Code to load `register.tsx` as a hooks module |
-| `hooks/register.tsx` | The whole mod: reads session data, animates the character, paints the strip, serves `/pixelbar-palette` and `/pixelbar-sections` |
+| `hooks/register.tsx` | The whole mod: reads session data, animates the walker, paints the strip, serves `/pixelbar-palette` and `/pixelbar-sections` |
 | `types/index.d.ts` | The types of the values the mod keeps in session state |
 
-- **Drawing:** the mod takes over Claude Code's `PromptHint` site (the line under the prompt) and returns a 3-row `Raster`, a grid where every cell's character, foreground and background color is set directly. That's what allows the character, pixel tiles, gauges and gradients.
+- **Drawing:** the mod takes over Claude Code's `PromptHint` site (the line under the prompt) and returns a 1-row `Raster`, a grid where every cell's character, foreground and background color is set directly. That's what allows the walker, pixel tiles, gauges and gradients.
 - **Data:** the mod gathers its data on these events and keeps it in session state; each change redraws the strip:
   - session start
   - each completed turn (token counts, the sparkline, the last turn's length)
@@ -301,7 +301,7 @@ The plugin is three files:
   - each tool call and compaction (activity counts)
   - each usage update from Claude Code (context, cost, rate limits)
   - a 15-second timer (git, subagents)
-- **Animation:** a timer redraws about three times a second only while there is something to animate (a turn running, the happy moment, the flash), and slowly while the character sleeps. Otherwise the strip stays still and costs nothing.
+- **Animation:** a timer redraws about three times a second only while there is something to animate (a turn running, the happy moment, the flash), and slowly while the walker sleeps. Otherwise the strip stays still and costs nothing.
 - **Saved choices:** the palette and the hidden sections are kept in the plugin's persistent store, so they survive restarts.
 
 ## Development
@@ -312,4 +312,4 @@ claude plugin test plugins/pixelbar       # 8 tests; prints a text preview of th
 claude --plugin-dir plugins/pixelbar      # a session with your working copy loaded
 ```
 
-The tests stand in for Claude Code (fake git output, model, usage, a mock clock) and decode the painted cells back into text and colors. They check the layout, the mode handling, narrow widths, the character's panic and sleep moods, and both commands.
+The tests stand in for Claude Code (fake git output, model, usage, a mock clock) and decode the painted cells back into text and colors. They check the layout, the mode handling, narrow widths, the walker's panic and sleep moods, and both commands.

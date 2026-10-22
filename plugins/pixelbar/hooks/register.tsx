@@ -16,7 +16,9 @@ const totalAtom = atom({ plugin: 'pixelbar', key: 'total' } as const, ZERO)
 const historyAtom = atom({ plugin: 'pixelbar', key: 'history' } as const, [])
 const paletteAtom = atom({ plugin: 'pixelbar', key: 'palette' } as const, 'gameboy')
 const countersAtom = atom({ plugin: 'pixelbar', key: 'counters' } as const, NO_COUNTS)
-const hiddenAtom = atom({ plugin: 'pixelbar', key: 'hidden' } as const, [])
+/** Sections hidden until /pixelbar-sections says otherwise. */
+export const DEFAULT_HIDDEN: readonly string[] = ['commit']
+const hiddenAtom = atom({ plugin: 'pixelbar', key: 'hidden' } as const, [...DEFAULT_HIDDEN])
 
 // ── Palettes: each one hue, dark to light, plus one alert tone ───────────
 
@@ -124,7 +126,7 @@ function ascii(s: string): string {
   return s.replace(/[^\x20-\x7e]+/g, ' ').replace(/\s+/g, ' ').trim()
 }
 
-const ROWS = 3 // project line, separator, Claude line
+const ROWS = 1
 
 class Canvas {
   readonly cells: Uint32Array
@@ -167,74 +169,51 @@ function toBase64(bytes: Uint8Array): string {
   return out
 }
 
-// ── The character: 8×6 pixels in half blocks, spanning all three rows ────
-// b body · e eye (light) · c closed eye (dark) · . empty
+// ── The walker: 2 cells of quarter blocks (4×2 pixels), one row tall ─────
+// It lives in a 3-cell slot: the third cell holds its sparkles and z's.
 
 export type Mood = 'idle' | 'walk' | 'happy' | 'panic' | 'sleep'
 export type Pose = { mood: Mood; frame: number; isFlashing: boolean }
 
-const FRAMES: Record<Mood, readonly (readonly string[])[]> = {
-  idle: [['..b..b..', '.bbbbbb.', 'bbebbebb', 'bbbbbbbb', '.b.bb.b.', 'b......b']],
-  walk: [
-    ['..b..b..', '.bbbbbb.', 'bbebbebb', 'bbbbbbbb', '.b.bb.b.', 'b......b'],
-    ['..b..b..', '.bbbbbb.', 'bbebbebb', 'bbbbbbbb', '.b.bb.b.', '.b....b.'],
-  ],
-  // Arms up, then a hop.
-  happy: [
-    ['b......b', 'b.bbbb.b', 'bbebbebb', '.bbbbbb.', '..b..b..', '.b....b.'],
-    ['..b..b..', '.bbbbbb.', 'bbebbebb', 'bbbbbbbb', '.b.bb.b.', 'b......b'],
-  ],
-  // Wide eyes, flailing legs; drawn shaking left and right.
-  panic: [
-    ['b.b..b.b', '.bbbbbb.', 'beebbeeb', 'bbbbbbbb', 'b.b..b.b', '.b....b.'],
-    ['.b.bb.b.', '.bbbbbb.', 'beebbeeb', 'bbbbbbbb', '.b.bb.b.', 'b......b'],
-  ],
-  // Antennae down, eyes shut, sitting.
-  sleep: [['........', '.bbbbbb.', 'bbcbbcbb', 'bbbbbbbb', 'bbbbbbbb', '.b....b.']],
+const FRAMES: Record<Mood, readonly string[]> = {
+  idle: ['▛▜'],
+  walk: ['▛▜', '▜▛'], // legs out, legs in
+  happy: ['▟▙', '▛▜'], // arms up, then down: a hop
+  panic: ['▛▜', '▜▛'], // flailing, drawn shaking
+  sleep: ['▄▄'], // curled up
 }
 
-const CHAR_X = 1
-const CHAR_W = 8
-const CONTENT_X = CHAR_X + CHAR_W + 3 // two columns for the sleeping z's, then a gap
+const WALKER_X = 1
+const WALKER_W = 3
+const CONTENT_X = WALKER_X + WALKER_W + 1
 
 function bodyColor(mood: Mood): number {
   return mood === 'panic' ? ALERT : mood === 'walk' || mood === 'happy' ? ACCENT : mood === 'sleep' ? C3 : C4
 }
 
-function drawCharacter(c: Canvas, pose: Pose): void {
+function drawWalker(c: Canvas, pose: Pose): void {
   const frames = FRAMES[pose.mood]
-  const grid = frames[pose.frame % frames.length] ?? frames[0]!
-  const body = bodyColor(pose.mood)
-  const colorOf = (ch: string | undefined) =>
-    ch === 'b' ? body : ch === 'e' ? LIGHT : ch === 'c' ? C2 : null
+  const glyph = frames[pose.frame % frames.length] ?? frames[0]!
   const shake = pose.mood === 'panic' && pose.frame % 2 ? 1 : 0
-  for (let row = 0; row < ROWS; row++) {
-    for (let x = 0; x < CHAR_W; x++) {
-      const top = colorOf(grid[row * 2]?.[x])
-      const bottom = colorOf(grid[row * 2 + 1]?.[x])
-      const at = CHAR_X + x + shake
-      if (top !== null && bottom !== null) c.put(at, row, top === bottom ? '█' : '▀', top, bottom)
-      else if (top !== null) c.put(at, row, '▀', top)
-      else if (bottom !== null) c.put(at, row, '▄', bottom)
-    }
-  }
-  if (pose.mood === 'happy') {
-    // Sparkles around the raised arms.
-    const on = pose.frame % 2 === 0
-    c.put(CHAR_X + CHAR_W, 0, on ? '*' : '+', LIGHT)
-    c.put(CHAR_X + CHAR_W + 1, 1, on ? '+' : '*', ACCENT)
-  }
-  if (pose.mood === 'sleep') {
-    // z's drift up beside the head.
-    const step = pose.frame % 3
-    c.put(CHAR_X + CHAR_W, 1, 'z', step >= 0 ? C4 : BASE)
-    if (step >= 1) c.put(CHAR_X + CHAR_W + 1, 0, 'Z', C4)
-  }
+  c.text(WALKER_X + shake, 0, glyph, bodyColor(pose.mood))
+  const side = WALKER_X + 2
+  if (pose.mood === 'happy') c.put(side, 0, pose.frame % 2 ? '+' : '*', LIGHT)
+  if (pose.mood === 'sleep') c.put(side, 0, pose.frame % 2 ? 'Z' : 'z', C4)
 }
 
-// ── Items: what a line is made of, laid out left to right ────────────────
+// ── Items: what the row is made of, laid out left to right ───────────────
 
-type Item = { id: SectionId; width: number; priority: number; draw: (c: Canvas, x: number, y: number) => void }
+type Item = { id: SectionId | 'divider'; width: number; priority: number; draw: (c: Canvas, x: number, y: number) => void }
+
+/** The thin rule between the project and Claude groups; it flashes after a long turn. */
+function divider(pose: Pose): Item {
+  return {
+    id: 'divider',
+    width: 1,
+    priority: 1,
+    draw: (c, x, y) => c.put(x, y, '│', pose.isFlashing && pose.frame % 2 === 0 ? ACCENT : C3),
+  }
+}
 
 /** `▐ LABEL value ▌`: half-block edges give the tile a stepped pixel outline. */
 function tile(id: SectionId, label: string, value: string, priority: number, valueColor?: number): Item {
@@ -312,12 +291,12 @@ function projectItems(snap: Snapshot, now: number): Item[] {
   if (g.dirty) branch += ` *${g.dirty}`
   if (g.ahead) branch += ` ^${g.ahead}`
   if (g.behind) branch += ` v${g.behind}`
-  out.push(tile('git', 'GIT', branch, 1))
-  if (g.added || g.removed) out.push(tile('diff', 'DIFF', `+${g.added} -${g.removed}`, 2))
+  out.push(tile('git', 'GIT', branch, 1.5))
+  if (g.added || g.removed) out.push(tile('diff', 'DIFF', `+${g.added} -${g.removed}`, 3))
   if (g.commitAt !== null) {
-    out.push(tile('commit', 'COMMIT', `${duration(now - g.commitAt)} ${clip(g.commitSubject, 36)}`, 3))
+    out.push(tile('commit', 'COMMIT', `${duration(now - g.commitAt)} ${clip(g.commitSubject, 36)}`, 4))
   }
-  if (g.stashes) out.push(tile('stash', 'STASH', `${g.stashes}`, 4))
+  if (g.stashes) out.push(tile('stash', 'STASH', `${g.stashes}`, 5))
   return out
 }
 
@@ -378,14 +357,6 @@ function drawLine(c: Canvas, y: number, x0: number, all: Item[], right: Item | n
   const end = shown ? c.w - shown.width - 1 : c.w
   for (let i = x; i < end; i++) c.put(i, y, '░', C1)
   shown?.draw(c, c.w - shown.width, y)
-}
-
-/** The rule between the lines: thin, with stepped ends; it flashes after a long turn. */
-function drawSeparator(c: Canvas, y: number, x0: number, pose: Pose): void {
-  const color = pose.isFlashing && pose.frame % 2 === 0 ? ACCENT : C2
-  for (let x = x0; x < c.w; x++) c.put(x, y, '─', color)
-  c.put(x0, y, '╶', color)
-  c.put(c.w - 1, y, '╴', color)
 }
 
 // ── Mode: the engine's own mode pill ─────────────────────────────────────
@@ -474,18 +445,18 @@ export type PaintInput = {
 }
 
 /**
- * Paints the strip: the character on the left across all three rows; the
- * project line, a separator and the Claude line to its right. It fills what
- * the engine's pill leaves of `columns`, less the terminal's last column
- * (writing there can wrap the row).
+ * Paints the strip, one row: the walker, the project sections, a divider,
+ * the Claude and session sections, and the engine's hint at the right end.
+ * It fills what the engine's pill leaves of `columns`, less the terminal's
+ * last column (writing there can wrap the row).
  */
 export function paint(p: PaintInput): Canvas {
   usePalette(p.palette ?? PALETTES[0]!)
   const c = new Canvas(Math.max(30, Math.min(512, p.columns - pillWidth(p.hint.pill) - 1)))
-  const hidden = new Set(p.hidden ?? [])
+  const hidden = new Set(p.hidden ?? DEFAULT_HIDDEN)
   const visible = (items: Item[]) => items.filter(i => !hidden.has(i.id))
 
-  drawCharacter(c, p.pose)
+  drawWalker(c, p.pose)
 
   const rest = p.hint.rest
   const hintItem: Item | null =
@@ -493,9 +464,10 @@ export function paint(p: PaintInput): Canvas {
       ? { id: 'hint', width: rest.length, priority: 2.5, draw: (cv, x, y) => cv.text(x, y, rest, C3) }
       : null
 
-  drawLine(c, 0, CONTENT_X, visible(projectItems(p.snap, p.now)), null)
-  drawSeparator(c, 1, CONTENT_X, p.pose)
-  drawLine(c, 2, CONTENT_X, visible(claudeItems(p.snap, p.total, p.history, p.counters, p.hint.pill, c.w, p.now)), hintItem)
+  const project = visible(projectItems(p.snap, p.now))
+  const claude = visible(claudeItems(p.snap, p.total, p.history, p.counters, p.hint.pill, c.w, p.now))
+  const items = project.length && claude.length ? [...project, divider(p.pose), ...claude] : [...project, ...claude]
+  drawLine(c, 0, CONTENT_X, items, hintItem)
   return c
 }
 
@@ -666,7 +638,7 @@ export const register: Register = on => {
     await $.command.register({
       name: 'pixelbar-sections',
       description: 'Show or hide pixelbar sections (no args: list them)',
-      argumentHint: '[section ... | on <s> | off <s> | reset]',
+      argumentHint: '[section ... | on <s> | off <s> | all | reset]',
       immediate: true,
     })
     const saved = await $.store.get('palette')
@@ -783,11 +755,13 @@ export const register: Register = on => {
 
   on('command.run', { command: 'pixelbar-sections' }, async ($, e) => {
     const words = (e.args ?? '').trim().split(/[\s,]+/).filter(Boolean)
-    let hidden = new Set((await read($, hiddenAtom)) ?? [])
+    let hidden = new Set((await read($, hiddenAtom)) ?? DEFAULT_HIDDEN)
     const unknown: string[] = []
 
     const verb = words[0]?.toLowerCase()
-    if (verb === 'reset' || verb === 'all') {
+    if (verb === 'reset') {
+      hidden = new Set(DEFAULT_HIDDEN)
+    } else if (verb === 'all') {
       hidden = new Set()
     } else if (verb === 'on' || verb === 'off' || verb === 'show' || verb === 'hide') {
       for (const w of words.slice(1)) {
@@ -819,8 +793,8 @@ export const register: Register = on => {
     const head = unknown.length ? `Unknown section: ${unknown.join(', ')}\n` : ''
     return {
       text:
-        `${head}Line 1 (project):\n${row(1)}\nLine 2 (Claude):\n${row(2)}\n` +
-        'Toggle: /pixelbar-sections <name> ...   Force: on|off <name> ...   Show all: reset',
+        `${head}Project:\n${row(1)}\nClaude and session:\n${row(2)}\n` +
+        'Toggle: /pixelbar-sections <name> ...   Force: on|off <name> ...   Everything: all   Defaults: reset',
     }
   })
 
@@ -844,7 +818,7 @@ export const register: Register = on => {
       columns: e.viewport.columns,
       now,
       palette: findPalette((await read($, paletteAtom)) ?? '') ?? PALETTES[0]!,
-      hidden: (await read($, hiddenAtom)) ?? [],
+      hidden: (await read($, hiddenAtom)) ?? DEFAULT_HIDDEN,
     })
     const { Raster } = $.ui.resolve(e)
 

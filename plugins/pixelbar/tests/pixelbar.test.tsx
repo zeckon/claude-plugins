@@ -82,25 +82,27 @@ async function paintStrip($: Parameters<Parameters<typeof test>[1]>[0], columns:
 }
 
 describe('pixelbar strip', () => {
-  test('project on line 1, a separator, Claude on line 2, the character across all three', async ($, on) => {
+  test('one row: walker, project sections, a divider, Claude and session sections, hint', async ($, on) => {
     fakeSession(on)
     await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
 
-    const { rows, columns } = await paintStrip($, 260)
-    console.log(`\n${rows.join('\n')}`)
+    const { rows, columns } = await paintStrip($, 320)
+    const [row] = rows as [string]
+    console.log(`\n${row}`)
 
-    expect(rows.length).toBe(3)
-    expect(columns).toBe(259)
-    const [project, rule, claude] = rows as [string, string, string]
-    for (const w of ['DIR claude-plugins', 'GIT feat/pixelbar *2 ^2', 'DIFF +124 -37', 'COMMIT 5m feat(pixelbar): two lines', 'STASH 1']) {
-      expect(project).toContain(w)
+    expect(rows.length).toBe(1)
+    expect(columns).toBe(319)
+    expect(row.slice(1, 3)).toBe('▛▜')
+    const order = ['DIR claude-plugins', 'GIT feat/pixelbar *2 ^2', 'DIFF +124 -37', 'STASH 1', '│', 'MODE DEFAULT',
+      'OPUS 5.5', '███░░ HIGH', 'CTX', '42% 84K/200K', '5H', '37%', '7D', '12%', 'SESSION 7T $1.23', 'TIME 1h12m', '? for shortcuts']
+    let at = 0
+    for (const w of order) {
+      const found = row.indexOf(w, at)
+      expect(found).toBeGreaterThan(-1)
+      at = found
     }
-    expect(rule).toContain('╶────')
-    for (const w of ['MODE DEFAULT', 'OPUS 5.5', '███░░ HIGH', 'CTX', '42% 84K/200K', '5H', '37%', '7D', '12%', 'SESSION 7T $1.23', 'TIME 1h12m', '? for shortcuts']) {
-      expect(claude).toContain(w)
-    }
-    // The character fills the first columns of every row.
-    for (const row of rows) expect(row.slice(1, 9).trim().length).toBeGreaterThan(0)
+    // COMMIT is hidden until switched on.
+    expect(row).not.toContain('COMMIT')
   })
 
   test('another mode: leaves room for the engine pill and draws no MODE tile', async ($, on) => {
@@ -112,78 +114,78 @@ describe('pixelbar strip', () => {
 
     const settled = await paintStrip($, 200, '(shift+tab to cycle)')
     expect(settled.columns).toBe(183)
-    expect(settled.rows[2]).not.toContain('MODE DEFAULT')
-    expect(settled.rows[2]).not.toContain('shift+tab')
+    expect(settled.rows[0]).not.toContain('MODE DEFAULT')
+    expect(settled.rows[0]).not.toContain('shift+tab')
 
     const back = await paintStrip($, 200, 'manual mode on · ? for shortcuts')
-    expect(back.rows[2]).toContain('MODE DEFAULT')
+    expect(back.rows[0]).toContain('MODE DEFAULT')
   })
 
-  test('fits a narrow terminal, keeping folder, branch and context', async ($, on) => {
+  test('fits a narrow terminal, keeping folder, mode and context', async ($, on) => {
     fakeSession(on)
     await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
 
-    const { rows } = await paintStrip($, 90, 'esc to interrupt')
-    console.log(`\n${rows.join('\n')}`)
-    expect(rows[0]).toContain('claude-plugins')
-    expect(rows[0]).toContain('feat/pixelbar')
-    expect(rows[0]).not.toContain('COMMIT')
-    expect(rows[2]).toContain('42%')
-    expect(rows[2]).not.toContain('SESSION')
+    const { rows } = await paintStrip($, 100, 'esc to interrupt')
+    const [row] = rows as [string]
+    console.log(`\n${row}`)
+    expect(row).toContain('claude-plugins')
+    expect(row).toContain('MODE DEFAULT')
+    expect(row).toContain('42%')
+    expect(row).not.toContain('SESSION')
+    expect(row).not.toContain('STASH')
   })
 
-  test('the character panics in the alert color when context passes 80%', async ($, on) => {
+  test('the walker panics in the alert color when context passes 80%', async ($, on) => {
     fakeSession(on, 85)
     await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
 
     const { cell } = await paintStrip($, 200)
-    // Row 1, first body column: two body pixels, one full block.
-    expect(cell(1, 1).ch).toBe('█')
-    expect(cell(1, 1).fg).toBe(0xff5050)
+    expect(cell(1, 0).fg).toBe(0xff5050)
   })
 
-  test('the character falls asleep after 5 quiet minutes', async ($, on) => {
+  test('the walker falls asleep after 5 quiet minutes', async ($, on) => {
     const clock = fakeSession(on)
     await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
 
-    expect((await paintStrip($, 200)).cell(9, 1).ch).not.toBe('z')
+    expect((await paintStrip($, 200)).rows[0]!.slice(1, 4)).toBe('▛▜ ')
     await clock.advance(6 * 60_000)
-    const { rows, cell } = await paintStrip($, 200)
-    console.log(`\n${rows.map(r => r.slice(0, 40)).join('\n')}`)
-    expect(cell(9, 1).ch).toBe('z')
+    const asleep = (await paintStrip($, 200)).rows[0]!.slice(1, 4)
+    console.log(`\n${asleep}`)
+    expect(asleep).toMatch(/^▄▄[zZ]$/)
   })
 
-  test('/pixelbar-sections toggles, forces and resets sections', async ($, on) => {
+  test('/pixelbar-sections toggles, forces, shows all and resets to defaults', async ($, on) => {
     fakeSession(on)
     await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
     const run = (args: string) => $.command.run({ command: 'pixelbar-sections', args })
+    const row = async () => (await paintStrip($, 320)).rows[0]!
 
     const listed = (await run('')).text ?? ''
-    expect(listed).toContain('Line 1 (project):')
-    expect(listed).toContain('[x] commit')
+    expect(listed).toContain('Project:')
+    expect(listed).toContain('Claude and session:')
+    expect(listed).toContain('[ ] commit')
+    expect(listed).toContain('[x] diff')
 
-    const toggled = (await run('commit diff')).text ?? ''
-    expect(toggled).toContain('[ ] commit')
-    let { rows } = await paintStrip($, 260)
-    expect(rows[0]).not.toContain('COMMIT')
-    expect(rows[0]).not.toContain('DIFF')
-
-    await run('on commit')
-    ;({ rows } = await paintStrip($, 260))
-    expect(rows[0]).toContain('COMMIT')
-    expect(rows[0]).not.toContain('DIFF')
+    expect((await run('commit diff')).text).toContain('[x] commit')
+    expect(await row()).toContain('COMMIT 5m feat(pixelbar): two lines')
+    expect(await row()).not.toContain('DIFF')
 
     await run('off hint model')
-    ;({ rows } = await paintStrip($, 260))
-    expect(rows[2]).not.toContain('? for shortcuts')
-    expect(rows[2]).not.toContain('OPUS')
+    expect(await row()).not.toContain('? for shortcuts')
+    expect(await row()).not.toContain('OPUS')
+
+    await run('on model')
+    expect(await row()).toContain('OPUS')
 
     expect((await run('nope')).text).toContain('Unknown section: nope')
 
     await run('reset')
-    ;({ rows } = await paintStrip($, 260))
-    expect(rows[0]).toContain('DIFF')
-    expect(rows[2]).toContain('OPUS')
+    expect(await row()).not.toContain('COMMIT')
+    expect(await row()).toContain('DIFF')
+    expect(await row()).toContain('? for shortcuts')
+
+    await run('all')
+    expect(await row()).toContain('COMMIT')
   })
 
   test('/pixelbar-palette cycles, picks by name, lists, and wraps around', async ($, on) => {
