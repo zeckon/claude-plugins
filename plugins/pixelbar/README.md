@@ -2,6 +2,8 @@
 
 A single-row, full-width, pixel-art status strip drawn **under** the Claude Code prompt, in place of Claude Code's own hint line and mode indicator. A little pixel walker on the left, then Claude and the session (mode, model, effort, context, usage, cost, session clock), and your project (folder and git) at the right end.
 
+**Video:** [watch the 3:00 explainer](https://zeckon.github.io/claude-plugins/pixelbar/)
+
 ```
  ▛▜  ▐ MODE AUTO ▌ ▐ MODEL OPUS 5.5 ▌ ▐ ▁▂▃▄▅ ▌ CTX ▆▆▆▆░░ 42% 84K/200K 5H ▆▆░░░░ 37% ▐ SESSION 1h12m 7T $1.23 ▌ ░░░░░░░░ ▐ DIR claude-plugins ▌ ▐ GIT feat/pixelbar *2 ^2 ▌ ▐ DIFF +124 -37 ▌
 ```

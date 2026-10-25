@@ -2,6 +2,8 @@
 
 Auto-commits each Claude Code turn — your prompt plus the resulting workspace state — to a per-project shadow git repo. You get an audit trail of what every prompt did, plus skills to query and restore from it.
 
+**Video:** [watch the 1:30 explainer](https://zeckon.github.io/claude-plugins/history/)
+
 The shadow repo is a separate bare git repository — it does not touch the project's normal `.git/` directory.
 
 ## Install
