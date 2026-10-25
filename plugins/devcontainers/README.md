@@ -2,6 +2,8 @@
 
 Claude Code plugin for [containers.dev](https://containers.dev/) dev containers. Author, inspect, lint, upgrade, and run the dev container lifecycle from slash commands — with optional opt-in hooks for sandboxing Claude's Bash calls and auto-rebuilding on config edits.
 
+**Video:** [watch the 1:31 explainer](https://zeckon.github.io/claude-plugins/devcontainers/)
+
 ## Install
 
 Register the marketplace (once per Claude Code instance — skip if you've already added it for another plugin):

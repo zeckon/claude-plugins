@@ -2,6 +2,8 @@
 
 Claude Code plugin that turns a code change into a lesson. `/explain:diff` investigates a diff, branch, or pull request — including the surrounding code it touches — and generates a rich, self-contained interactive HTML document that teaches the change: background, the problem it solves, the core intuition, data-flow diagrams, a before/after comparison, a code walkthrough, edge cases and trade-offs, testing, and a five-question comprehension quiz.
 
+**Video:** [watch the 1:31 explainer](https://zeckon.github.io/claude-plugins/explain/)
+
 The goal is understanding, not summarization: someone who didn't author the change should come away able to explain it in their own words.
 
 ## Install
