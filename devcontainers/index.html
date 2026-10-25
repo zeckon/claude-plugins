@@ -1,0 +1,181 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>:root{color-scheme:light}body{margin:0}img{max-width:100%}[hidden]{display:none!important}</style>
+<title>devcontainers explainer</title>
+<meta name="description" content="Author, run and sandbox dev containers from Claude Code.">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;700&family=JetBrains+Mono:wght@400;700&family=Silkscreen:wght@400;700&display=swap">
+<style>
+/* Shared by the index and every plugin page. */
+:root {
+	--bg: #f4f3ef;
+	--panel: #ffffff;
+	--line: #d9d6cc;
+	--fg: #16181c;
+	--dim: #5f6672;
+	--clay: #b8512f;
+	--gb: #4c6a0a;
+	--stage: #0b0d10;
+	--display: 'Silkscreen', 'Courier New', monospace;
+	--body: 'Hanken Grotesk', system-ui, sans-serif;
+	--mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) {
+	:root:not([data-theme="light"]) {
+		--bg: #0b0d10; --panel: #12151a; --line: #2b313b; --fg: #eceef2; --dim: #8a93a1; --clay: #e0845f; --gb: #9bbc0f; color-scheme: dark;
+	}
+}
+:root[data-theme="dark"] {
+	--bg: #0b0d10; --panel: #12151a; --line: #2b313b; --fg: #eceef2; --dim: #8a93a1; --clay: #e0845f; --gb: #9bbc0f; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+	background: var(--bg);
+	color: var(--fg);
+	font-family: var(--body);
+	font-size: 17px;
+	line-height: 1.55;
+	padding-block: 40px 72px;
+	padding-left: max(16px, env(safe-area-inset-left, 0px));
+	padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+main { max-width: 1240px; margin: 0 auto; display: grid; gap: 40px; }
+header { display: grid; gap: 10px; }
+.mark { font-family: var(--display); font-weight: 700; font-size: clamp(40px, 8vw, 84px); line-height: 1; color: var(--gb); letter-spacing: 0.02em; }
+.sub { color: var(--dim); max-width: none; margin: 0; font-size: clamp(13px, 1.7vw, 19px); white-space: nowrap; }
+.stage { display: grid; grid-template-columns: minmax(0, 1fr) 300px; gap: 24px; align-items: start; }
+.screen { background: var(--stage); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+#player { min-height: 0; aspect-ratio: 16 / 9; }
+.chapters { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.chapters button {
+	all: unset; box-sizing: border-box; cursor: pointer; width: 100%;
+	display: grid; grid-template-columns: 3.4em 1fr; gap: 10px; align-items: baseline;
+	padding: 8px 10px; border-radius: 6px; font-size: 15px; line-height: 1.3;
+}
+.chapters button:hover { background: var(--panel); }
+.chapters button:focus-visible { outline: 2px solid var(--clay); outline-offset: 1px; }
+.chapters button[aria-current="true"] { background: var(--panel); box-shadow: inset 3px 0 0 var(--clay); }
+.chapters time { font-family: var(--mono); font-size: 13px; color: var(--dim); font-variant-numeric: tabular-nums; }
+.chapters .part { font-family: var(--mono); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--clay); padding: 14px 10px 4px; }
+.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr)); gap: 32px; }
+h2 { font-family: var(--mono); font-size: 13px; letter-spacing: 0.14em; text-transform: uppercase; color: var(--clay); margin: 0 0 12px; font-weight: 700; }
+.cmd { display: flex; gap: 8px; align-items: stretch; margin: 0 0 10px; }
+.cmd code { flex: 1; min-width: 0; overflow-x: auto; white-space: nowrap; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; font-family: var(--mono); font-size: 14.5px; }
+.cmd code::before { content: '> '; color: var(--clay); }
+.cmd button { font: inherit; font-family: var(--mono); font-size: 13px; cursor: pointer; border: 1px solid var(--line); background: var(--panel); color: var(--fg); border-radius: 8px; padding: 0 14px; }
+.cmd button:hover { border-color: var(--clay); }
+.cmd button:focus-visible { outline: 2px solid var(--clay); outline-offset: 1px; }
+p { margin: 0 0 12px; max-width: 62ch; }
+a { color: var(--clay); }
+.note { color: var(--dim); font-size: 15px; }
+@media (max-width: 960px) { .stage { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 760px) { .sub { white-space: normal; font-size: 16px; } }
+.back { font-family: var(--mono); font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); text-decoration: none; }
+.back:hover, .back:focus-visible { color: var(--clay); }
+.mark.clay { color: var(--clay); }
+.files { color: var(--dim); font-size: 15px; display: flex; flex-wrap: wrap; gap: 6px 18px; }
+/* Index */
+.hero { display: grid; gap: 14px; }
+.hero .cmd { max-width: 640px; }
+.grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 24px; }
+@media (max-width: 960px) { .grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 520px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+.card { display: grid; gap: 12px; color: inherit; text-decoration: none; }
+.card img { display: block; width: 100%; max-width: 100%; height: auto; aspect-ratio: 1 / 1; object-fit: contain; border-radius: 10px; border: 1px solid var(--line); background: var(--stage); }
+.card:hover img { border-color: var(--clay); }
+.card:focus-visible { outline: 2px solid var(--clay); outline-offset: 4px; border-radius: 10px; }
+
+</style>
+
+
+</head>
+<body>
+<main>
+	<header>
+		<a class="back" href="../">zeckon / claude-plugins</a>
+		<div class="mark clay">devcontainers</div>
+		<p class="sub">Author, run and sandbox dev containers from Claude Code.</p>
+	</header>
+
+	<section class="stage" aria-label="Video">
+		<div class="screen"><div id="player" data-film="devcontainers"></div></div>
+		<nav aria-label="Chapters">
+			<ul class="chapters" id="chapters"></ul>
+		</nav>
+	</section>
+
+	<section class="cols">
+		<div>
+			<h2>Install</h2>
+			<div class="cmd"><code id="c1">/plugin marketplace add zeckon/claude-plugins</code><button type="button" data-copy="c1">Copy</button></div>
+			<div class="cmd"><code id="c2">/plugin install devcontainers@zeckon-claude-plugins</code><button type="button" data-copy="c2">Copy</button></div>
+			<p class="note">Needs Docker for up, build and exec, and Node.js for the devcontainers CLI. Hooks stay off until you enable them.</p>
+		</div>
+		<div>
+			<h2>In the video</h2>
+			<p>Writing a devcontainer.json from slash commands, running the container, sandbox mode (Claude's Bash calls rewritten to run inside the container by a PreToolUse hook), auto-rebuild on config edits, and what stays off until you turn it on.</p>
+			<p class="note">Covers devcontainers 0.1.0. <a href="https://github.com/zeckon/claude-plugins/tree/main/plugins/devcontainers">Plugin source</a> · <a href="devcontainers.mp4">Download the MP4</a> · Press space to play or pause.</p>
+		</div>
+	</section>
+</main>
+
+<script src="../player.js"></script>
+<script>
+(function () {
+	var FPS = 30;
+	var scenes = window.pluginChapters || [];
+	var list = document.getElementById('chapters');
+	var buttons = [];
+	function stamp(frame) {
+		var s = Math.round(frame / FPS);
+		return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+	}
+	scenes.forEach(function (sc) {
+		if (sc.part) {
+			var h = document.createElement('li');
+			h.className = 'part';
+			h.textContent = sc.part;
+			list.appendChild(h);
+		}
+		var li = document.createElement('li');
+		var b = document.createElement('button');
+		b.type = 'button';
+		b.innerHTML = '<time></time><span></span>';
+		b.firstChild.textContent = stamp(sc.start);
+		b.lastChild.textContent = sc.title;
+		b.addEventListener('click', function () {
+			var p = window.pluginPlayer;
+			if (p) { p.seekTo(sc.start); p.play(); }
+		});
+		li.appendChild(b);
+		list.appendChild(li);
+		buttons.push(b);
+	});
+	function mark(frame) {
+		var cur = 0;
+		scenes.forEach(function (sc, i) { if (frame >= sc.start) cur = i; });
+		buttons.forEach(function (b, i) { if (i === cur) b.setAttribute('aria-current', 'true'); else b.removeAttribute('aria-current'); });
+	}
+	mark(0);
+	window.addEventListener('plugin-frame', function (e) { mark(e.detail); });
+
+	document.querySelectorAll('[data-copy]').forEach(function (btn) {
+		btn.addEventListener('click', function () {
+			var el = document.getElementById(btn.getAttribute('data-copy'));
+			var done = function () { btn.textContent = 'Copied'; setTimeout(function () { btn.textContent = 'Copy'; }, 1400); };
+			var select = function () {
+				var r = document.createRange(); r.selectNodeContents(el);
+				var s = window.getSelection(); s.removeAllRanges(); s.addRange(r);
+			};
+			if (navigator.clipboard && navigator.clipboard.writeText) {
+				navigator.clipboard.writeText(el.textContent).then(done, select);
+			} else select();
+		});
+	});
+})();
+</script>
+
+</body>
+</html>
