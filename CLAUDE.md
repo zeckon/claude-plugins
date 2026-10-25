@@ -169,6 +169,10 @@ The `PromptHint` site (the line under the prompt) does not own the whole row: ou
 
 Test with `claude plugin test plugins/<mod>`; in tests, stub every `$` call the mod makes (`on('session.cwd', () => ({ value: ... }))`). A `settings.read` stub returns the whole settings object, even when the mod reads one `{ key }`. Type-check with `npx -p typescript tsc -p <mod folder>` once the engine has written `.claude-plugin/types/`.
 
+### GitHub Pages (`gh-pages`)
+
+The site at https://zeckon.github.io/claude-plugins/ (one explainer video page per plugin, plus an index) is generated. Its source is the Remotion project in [zeckon/claude-mod-presentation](https://github.com/zeckon/claude-mod-presentation) (`mods-motion/`); `npm run deploy:plugins` there rebuilds it and pushes the `gh-pages` branch. Don't edit `gh-pages` by hand, and don't add build output to `main`. When a plugin's behavior or UI changes, update its film there and redeploy.
+
 ### Validation
 
 ```bash

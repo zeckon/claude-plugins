@@ -29,6 +29,10 @@ Replace `<plugin>` with `history`, `devcontainers`, etc. from the table below.
 
 Each plugin's slash commands are namespaced as `/<plugin>:<skill>` (e.g. `/history:log`).
 
+## Videos
+
+Each plugin has a short animated explainer at **https://zeckon.github.io/claude-plugins/**.
+
 ## Validate
 
 ```bash
